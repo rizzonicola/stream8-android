@@ -45,7 +45,8 @@ data class NavRequest(
 /**
  * Esito della valutazione.
  * @param mayLaunchApp se true il livello Android può PROVARE ad aprire un'app esterna per questo URL
- *   (solo da Stream8/TMDB, con gesto reale). Se non esiste un'app compatibile si applica [web].
+ *   (solo da Stream8/TMDB o da un servizio della cascata TMDB, con gesto reale e mai da redirect).
+ *   Se non esiste un'app compatibile si applica [web].
  */
 data class Verdict(
     val web: WebAction,
@@ -98,8 +99,11 @@ class NavigationPolicy(
         if (request.kind == NavKind.POPUP && !request.userGesture) return deny(Reason.POPUP_WITHOUT_GESTURE)
 
         val ctx = contextOf(state, request.redirect)
-        val trusted = ctx.origin == Origin.STREAM8 || ctx.origin == Origin.TMDB
-        // Solo Stream8/TMDB, solo con un click reale (non automatismi, non redirect).
+        // Le app si possono aprire da Stream8/TMDB e, nella cascata avviata da TMDB,
+        // anche dai servizi raggiunti (es. Prime Video). Mai senza cascata.
+        val trusted = ctx.origin == Origin.STREAM8 || ctx.origin == Origin.TMDB ||
+            (ctx.origin == Origin.SERVICE && state.cascade)
+        // Solo con un click reale: non automatismi, non redirect.
         val mayLaunch = trusted && request.userGesture && !request.redirect
 
         when (parsed.scheme) {
@@ -124,7 +128,8 @@ class NavigationPolicy(
             Origin.SERVICE -> when {
                 toStream8 -> deny(Reason.SERVICE_CANNOT_LEAVE)
                 toTmdb -> allow(Reason.TMDB)
-                ctx.service?.contains(host) == true -> allow(Reason.SAME_SERVICE)
+                // Nella cascata anche i link https dello stesso servizio possono aprire la sua app.
+                ctx.service?.contains(host) == true -> Verdict(WebAction.LOAD, mayLaunch, Reason.SAME_SERVICE)
                 // Se TMDB e' gia' nella catena, i servizi possono aprirne altri con un click reale
                 // o tramite i redirect della catena (es. JustWatch -> Prime Video).
                 !state.cascade -> deny(Reason.OUTSIDE_SERVICE)

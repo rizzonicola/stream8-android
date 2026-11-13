@@ -118,15 +118,17 @@ Riassunto (tabella completa e casi limite in [docs/NAVIGAZIONE.md](docs/NAVIGAZI
 Non vale per domini simili (`themoviedb.org.evil.com`, `notthemoviedb.org`, `tmdb.org`…). `image.tmdb.org` è un host **solo per
 risorse** (immagini): non è una destinazione di navigazione e non viene mai filtrato dall'adblocker.
 
-La cascata vale solo per le **navigazioni web**: l'apertura di app Android resta consentita esclusivamente da Stream8 e TMDB
-(vedi sotto), non dai servizi aperti a cascata. I redirect restano chiusi verso nuovi domini finché la cascata non è attiva
-(quindi mai da soli Stream8); una volta partita da TMDB, i redirect possono attraversare più domini senza altri tocchi
-(es. JustWatch → Prime Video).
+La cascata vale solo per le **navigazioni web** e per l'apertura di app dai servizi raggiunti: l'apertura di app Android resta
+consentita da Stream8, da TMDB e dai servizi della cascata (sempre solo con un tocco reale), mai da un servizio senza TMDB
+nella catena e mai da redirect o navigazioni automatiche. I redirect restano chiusi verso nuovi domini finché la cascata non
+è attiva (quindi mai da soli Stream8); una volta partita da TMDB, i redirect possono attraversare più domini senza altri
+tocchi (es. JustWatch → Prime Video).
 
 ## Apertura delle applicazioni Android
 
-L'apertura di app esterne è consentita **esclusivamente** se la pagina attualmente caricata è Stream8 o TMDB **e** il link è
-stato toccato dall'utente (gesto reale; non redirect né navigazioni automatiche):
+L'apertura di app esterne è consentita **esclusivamente** se la pagina attualmente caricata è Stream8, TMDB oppure un servizio
+della **cascata TMDB** (non un servizio aperto direttamente da Stream8) **e** il link è stato toccato dall'utente (gesto reale;
+non redirect né navigazioni automatiche):
 
 - link `https`: si apre solo un'app non-browser che gestisce quel link come App Link (Android 11+: `FLAG_ACTIVITY_REQUIRE_NON_BROWSER`; Android 7–10: ricerca dei gestori non-browser); niente selettore;
 - `intent://`: l'Intent è **ricostruito** dall'app (azione VIEW, categoria BROWSABLE, nessun componente/selector/extra, mai un browser) a partire da scheme, package e `browser_fallback_url`; `Intent.parseUri` non viene usato;

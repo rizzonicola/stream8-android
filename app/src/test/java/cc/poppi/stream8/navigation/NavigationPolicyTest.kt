@@ -338,7 +338,7 @@ class NavigationPolicyTest {
     }
 
     @Test
-    fun `da un servizio esterno nessuna app puo' mai essere avviata`() {
+    fun `senza cascata un servizio esterno non puo' avviare app`() {
         val p = onStream8()
         p.openService("https://sito.com/")
         listOf(
@@ -356,6 +356,27 @@ class NavigationPolicyTest {
         // nemmeno i link di TMDB o del proprio dominio devono tentare app
         assertFalse(p.evaluate(click("https://www.themoviedb.org/x")).mayLaunchApp)
         assertFalse(p.evaluate(click("https://www.sito.com/x")).mayLaunchApp)
+    }
+
+    @Test
+    fun `nella cascata TMDB anche i servizi possono aprire app con un click reale`() {
+        val p = onStream8()
+        p.openService("https://sito.com/")
+        assertTrue(p.onMainFrameCommitted("https://www.themoviedb.org/")) // la cascata parte da TMDB
+        p.openService("https://primevideo.com/") // TMDB -> Prime Video
+
+        listOf(
+            "https://www.primevideo.com/detail/x", // App Link dello stesso servizio
+            "https://primevideo.com/open", // link https del servizio
+            "intent://www.primevideo.com/detail/x#Intent;scheme=https;package=com.amazon.avod.thirdpartyclient;end",
+            "primevideo://detail/x",
+        ).forEach { assertTrue(it, p.evaluate(click(it)).mayLaunchApp) }
+
+        // Nella cascata anche un nuovo dominio puo' tentare l'app, ma solo con un click.
+        assertTrue(p.evaluate(click("https://altro.net/")).mayLaunchApp)
+        // Redirect e navigazioni automatiche non aprono mai app.
+        assertFalse(p.evaluate(redirect("https://www.primevideo.com/a")).mayLaunchApp)
+        assertFalse(p.evaluate(auto("https://www.primevideo.com/b")).mayLaunchApp)
     }
 
     @Test
