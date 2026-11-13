@@ -34,6 +34,7 @@ import cc.poppi.stream8.navigation.NavRequest
 import cc.poppi.stream8.navigation.NavigationPolicy
 import cc.poppi.stream8.navigation.PolicyDefaults
 import cc.poppi.stream8.navigation.Reason
+import cc.poppi.stream8.navigation.UrlParser
 import cc.poppi.stream8.navigation.Verdict
 import cc.poppi.stream8.navigation.WebAction
 import java.io.ByteArrayInputStream
@@ -60,6 +61,7 @@ class WebController(
         fun onLoadError(kind: LoadErrorKind)
         fun onBlocked(url: String, reason: Reason)
         fun onThemeColor(color: Int)
+        fun onMainFrameHost(host: String?)
         fun onRenderProcessGone()
         fun showCustomView(view: View, callback: WebChromeClient.CustomViewCallback)
         fun hideCustomView()
@@ -256,6 +258,8 @@ class WebController(
             if (url == null) return
             if (policy.onMainFrameCommitted(url)) {
                 if (url != "about:blank") lastGoodUrl = url
+                // La fascia superiore a tema compare solo fuori da Stream8.
+                ui.onMainFrameHost(UrlParser.parse(url)?.host)
             } else {
                 recoverFromUnauthorizedPage(url)
             }

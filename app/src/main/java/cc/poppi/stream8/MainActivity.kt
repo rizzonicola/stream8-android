@@ -33,8 +33,10 @@ import cc.poppi.stream8.adblock.AdBlockListUpdater
 import cc.poppi.stream8.navigation.ImportLink
 import cc.poppi.stream8.navigation.LoadErrorKind
 import cc.poppi.stream8.navigation.NavigationPolicy
+import cc.poppi.stream8.navigation.PolicyDefaults
 import cc.poppi.stream8.navigation.Reason
 import cc.poppi.stream8.navigation.UrlParser
+import cc.poppi.stream8.navigation.hostMatches
 import cc.poppi.stream8.web.WebController
 import java.io.IOException
 
@@ -103,6 +105,10 @@ class MainActivity : ComponentActivity(), WebController.Ui {
             // navigazione iniziale ancora in corso.
             if (savedInstanceState == null && !prefs.firstRunDone) showImportDialog(firstRun = true)
             else controller.loadHome()
+        } else if (savedInstanceState?.getBoolean(KEY_TOP_BAR_VISIBLE, false) == true) {
+            // Dopo la morte del processo la pagina esterna viene ripristinata senza
+            // un nuovo commit: la fascia deve tornare visibile subito.
+            topBar.visibility = View.VISIBLE
         }
     }
 
@@ -125,6 +131,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
             isClickable = false
             isFocusable = false
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            visibility = View.GONE // su Stream8 la pagina arriva fino in alto; fuori da Stream8 si mostra
         }
         errorView = buildErrorView()
         val settingsButton = ImageButton(this).apply {
@@ -305,6 +312,12 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         applySystemBarIcons()
     }
 
+    /** Fascia a tema solo nelle pagine esterne (TMDB, servizi, ecc.), non su Stream8. */
+    override fun onMainFrameHost(host: String?) {
+        val external = host != null && !hostMatches(host, PolicyDefaults.STREAM8_HOST)
+        topBar.visibility = if (external) View.VISIBLE else View.GONE
+    }
+
     // ------------------------------------------------------------------ WebController.Ui
 
     override fun onLoadStarted() {
@@ -391,6 +404,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         super.onSaveInstanceState(outState)
         outState.putStringArrayList(KEY_VISITED, policy.snapshot())
         outState.putBoolean(KEY_CASCADE, policy.cascadeEnabled)
+        outState.putBoolean(KEY_TOP_BAR_VISIBLE, topBar.visibility == View.VISIBLE)
         // Con cronologie molto lunghe lo stato supererebbe il limite delle transazioni Binder: non si salva.
         if (webView.copyBackForwardList().size <= MAX_SAVED_HISTORY) {
             val webState = Bundle()
@@ -444,6 +458,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         const val EXTRA_RELOAD_HOME = "cc.poppi.stream8.RELOAD_HOME"
         private const val KEY_VISITED = "visited_scopes"
         private const val KEY_CASCADE = "cascade_enabled"
+        private const val KEY_TOP_BAR_VISIBLE = "top_bar_visible"
         private const val KEY_WEB = "web_state"
         private const val MAX_SAVED_HISTORY = 15
         private const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
