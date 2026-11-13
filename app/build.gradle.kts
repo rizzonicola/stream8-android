@@ -1,3 +1,4 @@
+import java.io.File
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -125,7 +126,7 @@ tasks.register<Copy>("collectReleaseApks") {
     doFirst { dist.get().asFile.deleteRecursively() }
     doLast {
         val dir = dist.get().asFile
-        val missing = expectedApkNames.filter { !java.io.File(dir, it).isFile }
+        val missing = expectedApkNames.filter { !File(dir, it).isFile }
         if (missing.isNotEmpty()) {
             throw GradleException("APK mancanti in ${dir.path}: ${missing.joinToString()}")
         }
