@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
 
     private lateinit var webLayer: FrameLayout
     private lateinit var root: FrameLayout
+    private lateinit var topBar: View
     private lateinit var fullscreenContainer: FrameLayout
     private lateinit var progressBar: ProgressBar
     private lateinit var errorView: LinearLayout
@@ -79,6 +80,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         buildLayout()
         barColor = getColor(R.color.background)
+        topBar.setBackgroundColor(barColor)
         applySystemBarIcons()
 
         // Dopo la morte del processo: stato di navigazione e domini dei servizi già autorizzati.
@@ -115,6 +117,15 @@ class MainActivity : ComponentActivity(), WebController.Ui {
             isIndeterminate = false
             visibility = View.GONE
         }
+        // Fascia superiore dell'intaglio/barra di stato: stesso colore del tema,
+        // disegnata sopra la pagina senza occupare spazio nel layout (la pagina
+        // riserva già l'area con env(safe-area-inset-top)).
+        topBar = View(this).apply {
+            setBackgroundColor(getColor(R.color.background))
+            isClickable = false
+            isFocusable = false
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
         errorView = buildErrorView()
         val settingsButton = ImageButton(this).apply {
             setImageResource(R.drawable.ic_more_vert)
@@ -124,6 +135,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
             setOnClickListener { showMenu(it) }
         }
 
+        webLayer.addView(topBar, FrameLayout.LayoutParams(MATCH, 0, Gravity.TOP))
         webLayer.addView(progressBar, FrameLayout.LayoutParams(MATCH, dp(3), Gravity.TOP))
         webLayer.addView(errorView, FrameLayout.LayoutParams(MATCH, MATCH))
         webLayer.addView(
@@ -145,13 +157,15 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         ViewCompat.setOnApplyWindowInsetsListener(webLayer) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            // Il top non si aggiunge qui: la pagina usa viewport-fit=cover e
-            // env(safe-area-inset-top) per la navbar, quindi lo stesso spazio
+            // Il top non si aggiunge come padding: la pagina usa viewport-fit=cover
+            // e env(safe-area-inset-top) per la navbar, quindi lo stesso spazio
             // verrebbe riservato due volte (padding nativo + CSS) e la barra
-            // resterebbe troppo in basso. Le pagine senza viewport-fit=cover
-            // vengono già riportate da Chromium fuori dall'intaglio. In basso
-            // resta il padding nativo per barra di navigazione e tastiera.
+            // resterebbe troppo in basso. La fascia superiore resta visibile,
+            // dipinta col tema, ma sovrapposta alla pagina: non aggiunge spazio.
+            // In basso resta il padding nativo per barra di navigazione e tastiera.
             v.setPadding(bars.left, 0, bars.right, maxOf(bars.bottom, ime.bottom))
+            (topBar.layoutParams as FrameLayout.LayoutParams).height = bars.top
+            topBar.requestLayout()
             insets
         }
     }
@@ -287,6 +301,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         if (color == barColor) return
         barColor = color
         root.setBackgroundColor(color)
+        topBar.setBackgroundColor(color)
         applySystemBarIcons()
     }
 

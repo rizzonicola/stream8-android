@@ -3,7 +3,7 @@
 App Android nativa per [Stream8](https://stream8.poppi.cc/): un involucro leggero (WebView) che mostra il sito
 **originale** a tutto schermo, con una politica di navigazione rigorosa e un adblocker opzionale.
 
-Questo repository è **indipendente** da [`rizzonicola/stream8`](https://github.com/rizzonicola/stream8): l'app non
+Questo repository è **separato** da [`rizzonicola/stream8`](https://github.com/rizzonicola/stream8), dello stesso autore: l'app non
 ricostruisce il sito in Kotlin, carica `https://stream8.poppi.cc/`.
 
 > **Stato della verifica:** test unitari e build debug/release firmata eseguiti localmente il 13/11/2026 con JDK 17,
@@ -191,6 +191,7 @@ app/src/test/   test unitari JVM (JUnit 4)
 | Test unitari (64 casi) | **Eseguiti** localmente: tutti PASS |
 | Workflow GitHub Actions | Sintassi YAML valida; esecuzione end-to-end con le release `v0.0.3`, `v0.0.4` e `v0.0.5` |
 | Aggiornamento adblock (OISD) | **Verificato** su Waydroid con l'APK `0.0.5`: 62.336 domini scaricati e applicati; Stream8 carica regolarmente |
+| Fascia superiore e navbar | **Verificata** su Waydroid con notch simulato da 54 px: navbar subito sotto l'intaglio, fascia a tema senza spazio aggiuntivo |
 | `scripts/verify-apks.sh` | **Eseguito** sui 4 APK reali: presenza, zip, firma, applicationId, versionName OK |
 | XML e risorse Android | Compilati da AAPT2; icona adattiva e fallback PNG verificati nell'APK |
 | APK firmati | **Sì**, localmente con la chiave di release; certificato `CN=Scripta` |
