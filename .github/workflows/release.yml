@@ -1,0 +1,140 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versione da pubblicare (MAJOR.MINOR.PATCH, es. 1.0.0). Verrà creato il tag vX.Y.Z.'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  GRADLE_VERSION: '8.10.2'
+
+jobs:
+  release:
+    name: Compila, firma e pubblica
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determina la versione
+        id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${INPUT_VERSION#v}"
+          fi
+          if ! [[ "$VERSION" =~ ^[0-9]{1,3}\.[0-9]{1,2}\.[0-9]{1,2}$ ]]; then
+            echo "::error::Versione non valida: '$VERSION'. Formato richiesto: MAJOR.MINOR.PATCH (MINOR e PATCH al massimo 99)."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      # Gli APK release NON firmati non vengono mai pubblicati: senza Secrets il workflow si ferma qui.
+      - name: Verifica i Secrets di firma
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=""
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error title=Secrets di firma mancanti::Release interrotta, nessun APK non firmato viene pubblicato. Secrets mancanti:${missing}. Vedi docs/FIRMA.md."
+            exit 1
+          fi
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+
+      - name: Gradle (con cache)
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Prepara il keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
+          echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+
+      - name: Test unitari e compilazione release firmata (4 APK)
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: >
+          gradle --no-daemon --stacktrace
+          -PappVersionName=${{ steps.version.outputs.version }}
+          testDebugUnitTest collectReleaseApks
+
+      - name: Rimuovi il keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.keystore"
+
+      - name: Verifica contenuto e firma dei 4 APK
+        env:
+          REQUIRE_SIGNED: '1'
+          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/verify-apks.sh build/dist
+
+      - name: Calcola SHA-256
+        working-directory: build/dist
+        run: |
+          sha256sum Stream8-arm64-v8a.apk Stream8-armeabi-v7a.apk Stream8-x86_64.apk Stream8-universal.apk > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Conserva gli APK come artifact del workflow
+        uses: actions/upload-artifact@v4
+        with:
+          name: Stream8-${{ steps.version.outputs.tag }}
+          path: |
+            build/dist/*.apk
+            build/dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Pubblica la GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: Stream8 ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            build/dist/Stream8-arm64-v8a.apk
+            build/dist/Stream8-armeabi-v7a.apk
+            build/dist/Stream8-x86_64.apk
+            build/dist/Stream8-universal.apk
+            build/dist/SHA256SUMS.txt

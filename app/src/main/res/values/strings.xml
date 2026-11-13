@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Stream8</string>
+
+    <string name="settings_title">Impostazioni</string>
+    <string name="cd_settings">Impostazioni</string>
+    <string name="shortcut_settings_short">Impostazioni</string>
+    <string name="shortcut_settings_long">Impostazioni di Stream8</string>
+
+    <string name="adblock_title">Blocco pubblicità e tracker</string>
+    <string name="adblock_desc">Filtro leggero basato su un elenco di domini. Non garantisce il blocco totale degli annunci. La modifica vale per le richieste successive: ricarica la pagina per applicarla del tutto.</string>
+    <string name="action_reload_home">Ricarica Stream8</string>
+    <string name="action_nav_rules">Regole di navigazione</string>
+    <string name="version_label">Versione %1$s (build %2$d)</string>
+
+    <string name="nav_rules_title">Regole di navigazione</string>
+    <string name="nav_rules_body">• Si parte da Stream8 (stream8.poppi.cc).\n\n• Quando da Stream8 tocchi un servizio, la pagina si apre qui dentro e il dominio autorizzato diventa quello del servizio, con tutti i suoi sottodomini.\n\n• Il servizio non può aprire altri domini, né Stream8: per tornare indietro usa il tasto Indietro.\n\n• TMDB (themoviedb.org) è sempre raggiungibile.\n\n• Solo da Stream8 e da TMDB, con un tocco reale, un link può aprire l\'app Android compatibile (es. un\'app di streaming installata). I servizi esterni non possono mai avviare altre app.\n\n• Solo HTTPS. Certificati non validi non vengono mai accettati. Nessun browser esterno viene aperto.</string>
+
+    <string name="retry">Riprova</string>
+    <string name="open_settings">Impostazioni</string>
+    <string name="error_offline">Connessione assente o server non raggiungibile.</string>
+    <string name="error_timeout">Il server non risponde. Riprova tra poco.</string>
+    <string name="error_tls">Connessione non sicura: certificato non valido. La pagina non è stata caricata.</string>
+    <string name="error_other">Impossibile caricare la pagina.</string>
+
+    <string name="blocked_navigation">Navigazione bloccata: %1$s</string>
+    <string name="blocked_app">Questa pagina non può aprire altre app</string>
+    <string name="no_app">Nessuna app compatibile trovata</string>
+</resources>

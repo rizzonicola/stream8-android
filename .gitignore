@@ -1,0 +1,20 @@
+# Gradle / Android
+.gradle/
+build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+*.iml
+.idea/
+.DS_Store
+
+# Firma: NON committare mai chiavi o password
+*.jks
+*.keystore
+*.p12
+keystore.properties
+
+# Artefatti
+*.apk
+*.aab

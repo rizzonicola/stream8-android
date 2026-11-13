@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Il contenuto può estendersi sotto il notch; i margini sono gestiti dagli insets. -->
+    <style name="Theme.Stream8" parent="Base.Theme.Stream8">
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+</resources>

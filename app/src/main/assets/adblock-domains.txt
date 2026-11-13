@@ -1,0 +1,53 @@
+# Elenco di domini pubblicitari e tracker per l'adblocker leggero di Stream8.
+#
+# Formato: un dominio per riga. `#` inizia un commento. Si blocca il dominio e tutti i suoi sottodomini.
+# Per aggiornare l'elenco basta modificare questo file e ricompilare: nessun servizio esterno è coinvolto.
+#
+# Regole: aggiungere SOLO domini usati esclusivamente per pubblicità/tracciamento. Mai CDN generiche,
+# host di API, autenticazione, immagini o video. Stream8, TMDB e le richieste first-party non vengono mai
+# bloccate, anche se compaiono qui. Elenco di partenza minimo: NON garantisce il blocco totale degli annunci.
+
+# --- Reti pubblicitarie ---
+doubleclick.net
+googlesyndication.com
+googleadservices.com
+adservice.google.com
+2mdn.net
+adnxs.com
+adsrvr.org
+advertising.com
+adform.net
+amazon-adsystem.com
+casalemedia.com
+criteo.com
+criteo.net
+openx.net
+pubmatic.com
+rubiconproject.com
+smartadserver.com
+taboola.com
+outbrain.com
+mgid.com
+revcontent.com
+zedo.com
+yieldmo.com
+
+# --- Pubblicità invasiva (popup, push, redirect) ---
+popads.net
+popcash.net
+propellerads.com
+exoclick.com
+exosrv.com
+juicyads.com
+trafficjunky.com
+adsterra.com
+hilltopads.net
+clickadu.com
+onclickads.net
+
+# --- Misurazione e tracker ---
+google-analytics.com
+scorecardresearch.com
+quantserve.com
+moatads.com
+hotjar.com
