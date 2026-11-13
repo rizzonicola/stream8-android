@@ -1,9 +1,11 @@
 package cc.poppi.stream8
 
+import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.os.SystemClock
+import android.text.InputType
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
@@ -12,9 +14,11 @@ import android.view.WindowManager
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.widget.Button
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import android.widget.PopupMenu
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
@@ -25,6 +29,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import cc.poppi.stream8.adblock.AdBlocker
+import cc.poppi.stream8.navigation.ImportLink
 import cc.poppi.stream8.navigation.LoadErrorKind
 import cc.poppi.stream8.navigation.NavigationPolicy
 import cc.poppi.stream8.navigation.Reason
@@ -36,6 +41,7 @@ import java.io.IOException
 class MainActivity : ComponentActivity(), WebController.Ui {
 
     private val policy = NavigationPolicy()
+    private lateinit var prefs: Prefs
     private lateinit var controller: WebController
     private lateinit var webView: WebView
 
@@ -64,18 +70,21 @@ class MainActivity : ComponentActivity(), WebController.Ui {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        prefs = Prefs(this)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         buildLayout()
+        applySystemBarIcons()
 
         // Dopo la morte del processo: stato di navigazione e domini dei servizi già autorizzati.
         policy.restore(savedInstanceState?.getStringArrayList(KEY_VISITED))
 
-        controller = WebController(this, policy, loadAdBlocker(), Prefs(this), this)
+        controller = WebController(this, policy, loadAdBlocker(), prefs, this)
         attachNewWebView()
         onBackPressedDispatcher.addCallback(this, backCallback)
 
         val saved = savedInstanceState?.getBundle(KEY_WEB)
         if (saved == null || webView.restoreState(saved) == null) controller.loadHome()
+        if (savedInstanceState == null && !prefs.firstRunDone) showImportDialog(firstRun = true)
     }
 
     // ------------------------------------------------------------------ layout
@@ -95,7 +104,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
             setBackgroundResource(R.drawable.bg_floating_button)
             contentDescription = getString(R.string.cd_settings)
             alpha = 0.35f
-            setOnClickListener { openSettings() }
+            setOnClickListener { showMenu(it) }
         }
 
         webLayer.addView(progressBar, FrameLayout.LayoutParams(MATCH, dp(3), Gravity.TOP))
@@ -171,6 +180,81 @@ class MainActivity : ComponentActivity(), WebController.Ui {
 
     private fun openSettings() {
         startActivity(Intent(this, SettingsActivity::class.java))
+    }
+
+    private fun showMenu(anchor: View) {
+        PopupMenu(this, anchor).apply {
+            menu.add(0, MENU_SETTINGS, 0, R.string.menu_settings)
+            menu.add(0, MENU_IMPORT, 1, R.string.menu_import)
+            menu.add(0, MENU_INFO, 2, R.string.menu_info)
+            setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    MENU_SETTINGS -> openSettings()
+                    MENU_IMPORT -> showImportDialog(firstRun = false)
+                    MENU_INFO -> showInfo()
+                }
+                true
+            }
+            show()
+        }
+    }
+
+    /** Link di condivisione delle impostazioni; il sito mostra poi la conferma di importazione. */
+    private fun showImportDialog(firstRun: Boolean) {
+        val input = EditText(this).apply {
+            hint = getString(R.string.import_hint)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            setSingleLine(true)
+        }
+        val container = FrameLayout(this).apply {
+            setPadding(dp(24), dp(8), dp(24), 0)
+            addView(input, FrameLayout.LayoutParams(MATCH, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.import_title)
+            .setMessage(if (firstRun) R.string.import_first_run_message else R.string.import_message)
+            .setView(container)
+            .setPositiveButton(R.string.import_action, null)
+            .setNegativeButton(if (firstRun) R.string.continue_without_import else android.R.string.cancel, null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val url = ImportLink.parse(input.text.toString())
+                if (url == null) {
+                    input.error = getString(R.string.import_invalid)
+                } else {
+                    prefs.firstRunDone = true
+                    dialog.dismiss()
+                    controller.loadImport(url)
+                }
+            }
+            if (firstRun) {
+                dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
+                    prefs.firstRunDone = true
+                    dialog.dismiss()
+                }
+            }
+        }
+        // Al primo avvio la scelta è obbligatoria: solo "Importa" o "Continua senza importare".
+        dialog.setCancelable(!firstRun)
+        dialog.show()
+    }
+
+    private fun showInfo() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.info_title)
+            .setMessage(R.string.info_body)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    /** Icone chiare sulle barre trasparenti: il tema dell'app è sempre scuro. */
+    private fun applySystemBarIcons() {
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
     }
 
     // ------------------------------------------------------------------ WebController.Ui
@@ -299,6 +383,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
     }
 
     private fun applyImmersive() {
+        applySystemBarIcons()
         val insetsController = WindowInsetsControllerCompat(window, window.decorView)
         insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         insetsController.hide(WindowInsetsCompat.Type.systemBars())
@@ -310,5 +395,8 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         private const val KEY_WEB = "web_state"
         private const val MAX_SAVED_HISTORY = 15
         private const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
+        private const val MENU_SETTINGS = 1
+        private const val MENU_IMPORT = 2
+        private const val MENU_INFO = 3
     }
 }

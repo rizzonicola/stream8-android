@@ -115,6 +115,12 @@ class WebController(
         webView.loadUrl(PolicyDefaults.HOME_URL)
     }
 
+    /** Link di importazione impostazioni: è sempre su Stream8, quindi riparte dalla home logica. */
+    fun loadImport(url: String) {
+        policy.onHomeRequested()
+        webView.loadUrl(url)
+    }
+
     fun retry() {
         val current = webView.url
         if (current.isNullOrBlank() || current == "about:blank") loadHome() else webView.reload()

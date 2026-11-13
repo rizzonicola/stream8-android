@@ -3,17 +3,18 @@
 App Android nativa per [Stream8](https://stream8.poppi.cc/): un involucro leggero (WebView) che mostra il sito
 **originale** a tutto schermo, con una politica di navigazione rigorosa e un adblocker opzionale.
 
-Questo repository è **indipendente** da [`rizzonicola/stream8`](https://github.com/rizzonicola/stream8), che non è
-stato modificato in nessun modo. L'app non ricostruisce il sito in Kotlin: carica `https://stream8.poppi.cc/`.
+Questo repository è **indipendente** da [`rizzonicola/stream8`](https://github.com/rizzonicola/stream8): l'app non
+ricostruisce il sito in Kotlin, carica `https://stream8.poppi.cc/`.
 
-> **Stato della verifica:** il codice è stato scritto e controllato staticamente, ma **non è stato compilato e i test
-> non sono stati eseguiti** nell'ambiente in cui è stato generato (senza Android SDK, Gradle né rete). La prima
-> esecuzione di `ci.yml` su GitHub è la vera verifica: vedi [Stato della verifica](#stato-della-verifica).
+> **Stato della verifica:** test unitari e build debug/release firmata eseguiti localmente il 13/11/2026 con JDK 17,
+> Gradle 8.9 e Android SDK 35: tutti verdi. La release GitHub `v0.0.2` è la prima verifica end-to-end dei workflow:
+> vedi [Stato della verifica](#stato-della-verifica).
 
 ## Cosa fa
 
 - Apre direttamente Stream8, senza barre né elementi superflui. Tasto Indietro, rotazione, tastiera e video a schermo intero gestiti.
 - Mantiene cookie, Local Storage e sessioni; barra di caricamento discreta; errore di connessione con pulsante **Riprova**.
+- Usa la cache del service worker del sito: la shell si apre subito dalla cache e si aggiorna in background; i dati dinamici restano sempre in rete.
 - Quando da Stream8 si apre un servizio esterno, **solo quel dominio** (con i suoi sottodomini) diventa navigabile; TMDB resta sempre raggiungibile. Dettagli in [docs/NAVIGAZIONE.md](docs/NAVIGAZIONE.md).
 - Può aprire app Android installate (es. un'app di streaming) **solo** da pagine Stream8 e TMDB, **solo** con un tocco reale dell'utente.
 - Solo HTTPS, certificati sempre verificati, nessun bridge JavaScript, nessun accesso a file locali, nessun browser esterno.
@@ -25,8 +26,12 @@ Permessi richiesti: soltanto `INTERNET`. `minSdk` 24 (Android 7.0), `targetSdk` 
 ## Impostazioni
 
 Si aprono dal piccolo pulsante semitrasparente (⋮) in basso a sinistra, dal tasto **Menu** (telecomandi TV/tastiere) o
-dallo shortcut "Impostazioni" tenendo premuta l'icona dell'app. Contengono: interruttore adblocker, **Ricarica Stream8**,
-versione e riepilogo delle regole di navigazione.
+dallo shortcut "Impostazioni" tenendo premuta l'icona dell'app. Il pulsante ⋮ apre un menu con **Impostazioni**,
+**Importa impostazioni** (link di condivisione `/import-settings?data=…`) e **Info e licenze**. Le Impostazioni contengono:
+interruttore adblocker, **Ricarica Stream8**, versione e riepilogo delle regole di navigazione.
+
+Al **primo avvio** l'app chiede una sola volta se importare le impostazioni da un link condiviso oppure continuare
+normalmente. Il link viene aperto nella WebView: la conferma e l'applicazione restano gestite dal sito Stream8.
 
 ## Installazione
 
@@ -130,7 +135,9 @@ La decisione si basa sulla **pagina principale realmente caricata**, mai sul ref
 Filtro a elenco di domini (`app/src/main/assets/adblock-domains.txt`), attivo di default, disattivabile dalle Impostazioni.
 Blocca solo richieste di **risorse e iframe** il cui host (o dominio padre) è in elenco. Non blocca mai: Stream8, TMDB, richieste
 first-party, né la navigazione principale. L'elenco contiene solo domini pubblicitari/tracker, non CDN, API, autenticazione, immagini o video.
-Per aggiornarlo modifica il file (un dominio per riga, `#` per i commenti; accetta anche il formato `hosts`) e ricompila: nessun servizio esterno.
+L'elenco è **statico e incorporato nell'APK**: non è dinamico, non si aggiorna da solo e non contatta servizi esterni; cambia
+solo con una nuova versione dell'app. Per aggiornarlo modifica il file (un dominio per riga, `#` per i commenti; accetta anche
+il formato `hosts`) e ricompila.
 
 **Limiti:** è un elenco di partenza minimo e non promette il blocco totale degli annunci; non fa filtri cosmetici né blocca
 annunci serviti dallo stesso dominio del contenuto.
@@ -165,9 +172,9 @@ app/src/test/   test unitari JVM (JUnit 4)
 
 | Verifica | Esito |
 |---|---|
-| Compilazione Gradle/Kotlin/APK | **Non eseguita** (nessun Gradle/Android SDK/rete nell'ambiente di generazione) |
-| Test unitari (48 casi) | **Scritti, non eseguiti** — vanno eseguiti con `./gradlew testDebugUnitTest` o dal workflow CI |
-| Workflow GitHub Actions | Sintassi YAML valida; **mai eseguiti** su GitHub |
-| `scripts/verify-apks.sh` | **Eseguito** su archivi zip simulati (caso corretto, APK mancante, ABI errate, universale completo, firma assente) |
-| XML delle risorse, bilanciamento parentesi dei sorgenti | Controllati |
-| APK firmati | **No**: nessuna chiave di firma disponibile |
+| Compilazione Gradle/Kotlin/APK | **Eseguita** localmente (Gradle 8.9, JDK 17, Android SDK 35): debug e release firmata OK |
+| Test unitari (50 casi) | **Eseguiti** localmente: tutti PASS |
+| Workflow GitHub Actions | Sintassi YAML valida; prima esecuzione end-to-end con la release `v0.0.2` |
+| `scripts/verify-apks.sh` | **Eseguito** sui 4 APK reali: presenza, zip, firma, applicationId, versionName OK |
+| XML e risorse Android | Compilati da AAPT2; icona adattiva e fallback PNG verificati nell'APK |
+| APK firmati | **Sì**, localmente con la chiave di release; certificato `CN=Scripta` |

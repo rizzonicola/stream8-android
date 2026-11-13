@@ -4,6 +4,9 @@
         <item name="android:windowBackground">@color/background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <!-- Tema sempre scuro: icone chiare anche quando il sistema è in modalità chiara. -->
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 
     <style name="Theme.Stream8" parent="Base.Theme.Stream8" />

@@ -1,10 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Anello e triangolo ripresi dall'icona della PWA. -->
     <path
-        android:fillColor="#4FD1C5"
-        android:pathData="M43,34L43,74L77,54Z" />
+        android:pathData="M16.875,54a37.125,37.125 0 1,1 74.25,0a37.125,37.125 0 1,1 -74.25,0"
+        android:fillColor="#00000000"
+        android:strokeColor="#4FD1C5"
+        android:strokeWidth="2.11" />
+    <path android:pathData="M43.88,33.33L77.63,54L43.88,74.67Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="43.88"
+                android:startY="33.33"
+                android:endX="77.63"
+                android:endY="74.67">
+                <item android:offset="0" android:color="#8CE5DB" />
+                <item android:offset="1" android:color="#0F8B8D" />
+            </gradient>
+        </aapt:attr>
+    </path>
 </vector>

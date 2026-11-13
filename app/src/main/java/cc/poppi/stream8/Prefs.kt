@@ -11,7 +11,13 @@ class Prefs(context: Context) {
         get() = prefs.getBoolean(KEY_ADBLOCK, true)
         set(value) = prefs.edit().putBoolean(KEY_ADBLOCK, value).apply()
 
+    /** Il messaggio di importazione impostazioni compare solo al primo avvio. */
+    var firstRunDone: Boolean
+        get() = prefs.getBoolean(KEY_FIRST_RUN, false)
+        set(value) = prefs.edit().putBoolean(KEY_FIRST_RUN, value).apply()
+
     private companion object {
         const val KEY_ADBLOCK = "adblock_enabled"
+        const val KEY_FIRST_RUN = "first_run_done"
     }
 }
