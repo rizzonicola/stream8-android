@@ -13,7 +13,7 @@ ricostruisce il sito in Kotlin, carica `https://stream8.poppi.cc/`.
 ## Cosa fa
 
 - Apre direttamente Stream8, senza barre né elementi superflui. Tasto Indietro, rotazione, tastiera e video a schermo intero gestiti.
-- La fascia superiore a tema compare **solo fuori da Stream8** (TMDB, servizi esterni): sulla home e sulle pagine Stream8 la pagina arriva fino in alto.
+- La fascia superiore a tema compare **solo fuori da Stream8** (TMDB, servizi esterni): lì occupa l'area dell'intaglio e la pagina inizia **sotto** di essa, senza sovrapposizioni. Sulla home e sulle pagine Stream8 la fascia è nascosta e la pagina arriva fino in alto.
 - Mantiene cookie, Local Storage e sessioni; barra di caricamento discreta; errore di connessione con pulsante **Riprova**.
 - Usa la cache del service worker del sito: la shell si apre subito dalla cache e si aggiorna in background; i dati dinamici restano sempre in rete.
 - Quando da Stream8 si apre un servizio esterno, **solo quel dominio** (con i suoi sottodomini) diventa navigabile; TMDB resta sempre raggiungibile. Quando entra in gioco TMDB la navigazione procede **a cascata** su nuovi domini, ricorsivamente. Dettagli in [docs/NAVIGAZIONE.md](docs/NAVIGAZIONE.md).
@@ -192,7 +192,7 @@ app/src/test/   test unitari JVM (JUnit 4)
 | Test unitari (64 casi) | **Eseguiti** localmente: tutti PASS |
 | Workflow GitHub Actions | Sintassi YAML valida; esecuzione end-to-end con le release `v0.0.3`, `v0.0.4`, `v0.0.5` e `v0.0.6` |
 | Aggiornamento adblock (OISD) | **Verificato** su Waydroid con l'APK `0.0.5`: 62.336 domini scaricati e applicati; Stream8 carica regolarmente |
-| Fascia superiore e navbar | **Verificata** su Waydroid: fascia `GONE` su Stream8 e `VISIBLE` su TMDB, altezza pari all'inset superiore e nessuno spazio aggiuntivo. L'emulatore di Waydroid non espone un inset superiore maggiore di zero, quindi il riempimento a tema è verificato a livello di gerarchia e layout |
+| Fascia superiore e navbar | **Verificata** su Waydroid con inset superiore forzato a 60 px: su TMDB la fascia occupa `0..60` e la WebView inizia a `y=60`, senza coprire il contenuto; su Stream8 la fascia è `GONE` e la WebView parte da `0`. L'emulatore non espone un inset reale maggiore di zero, quindi il test usa un inset temporaneo |
 | `scripts/verify-apks.sh` | **Eseguito** sui 4 APK reali: presenza, zip, firma, applicationId, versionName OK |
 | XML e risorse Android | Compilati da AAPT2; icona adattiva e fallback PNG verificati nell'APK |
 | APK firmati | **Sì**, localmente con la chiave di release; certificato `CN=Scripta` |

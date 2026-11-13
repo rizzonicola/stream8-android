@@ -59,6 +59,9 @@ class MainActivity : ComponentActivity(), WebController.Ui {
     /** Colore del tema della pagina, applicato alle aree delle barre di sistema. */
     private var barColor = Color.BLACK
 
+    /** Altezza dell'area dell'intaglio/barra di stato su cui disegnare la fascia. */
+    private var topInset = 0
+
     private var customView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
     private var lastToastAt = 0L
@@ -109,6 +112,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
             // Dopo la morte del processo la pagina esterna viene ripristinata senza
             // un nuovo commit: la fascia deve tornare visibile subito.
             topBar.visibility = View.VISIBLE
+            applyContentTopInset()
         }
     }
 
@@ -123,9 +127,9 @@ class MainActivity : ComponentActivity(), WebController.Ui {
             isIndeterminate = false
             visibility = View.GONE
         }
-        // Fascia superiore dell'intaglio/barra di stato: stesso colore del tema,
-        // disegnata sopra la pagina senza occupare spazio nel layout (la pagina
-        // riserva già l'area con env(safe-area-inset-top)).
+        // Fascia superiore dell'intaglio/barra di stato: stesso colore del tema.
+        // Fuori da Stream8 occupa l'area dell'inset e la pagina inizia sotto di
+        // essa; su Stream8 è nascosta e la pagina usa env(safe-area-inset-top).
         topBar = View(this).apply {
             setBackgroundColor(getColor(R.color.background))
             isClickable = false
@@ -164,16 +168,33 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         ViewCompat.setOnApplyWindowInsetsListener(webLayer) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            // Il top non si aggiunge come padding: la pagina usa viewport-fit=cover
-            // e env(safe-area-inset-top) per la navbar, quindi lo stesso spazio
-            // verrebbe riservato due volte (padding nativo + CSS) e la barra
-            // resterebbe troppo in basso. La fascia superiore resta visibile,
-            // dipinta col tema, ma sovrapposta alla pagina: non aggiunge spazio.
+            // La fascia superiore, quando visibile, è un elemento del layout: la
+            // pagina parte sotto di essa (topMargin della WebView). Su Stream8 la
+            // fascia è nascosta e la pagina usa env(safe-area-inset-top) del sito.
             // In basso resta il padding nativo per barra di navigazione e tastiera.
             v.setPadding(bars.left, 0, bars.right, maxOf(bars.bottom, ime.bottom))
-            (topBar.layoutParams as FrameLayout.LayoutParams).height = bars.top
+            topInset = bars.top
+            (topBar.layoutParams as FrameLayout.LayoutParams).height = topInset
             topBar.requestLayout()
+            applyContentTopInset()
             insets
+        }
+    }
+
+    /** Sposta la pagina sotto la fascia quando è visibile: non deve mai coprirla. */
+    private fun applyContentTopInset() {
+        val offset = if (topBar.visibility == View.VISIBLE) topInset else 0
+        if (::webView.isInitialized) {
+            val params = webView.layoutParams as FrameLayout.LayoutParams
+            if (params.topMargin != offset) {
+                params.topMargin = offset
+                webView.requestLayout()
+            }
+        }
+        val progressParams = progressBar.layoutParams as FrameLayout.LayoutParams
+        if (progressParams.topMargin != offset) {
+            progressParams.topMargin = offset
+            progressBar.requestLayout()
         }
     }
 
@@ -315,7 +336,10 @@ class MainActivity : ComponentActivity(), WebController.Ui {
     /** Fascia a tema solo nelle pagine esterne (TMDB, servizi, ecc.), non su Stream8. */
     override fun onMainFrameHost(host: String?) {
         val external = host != null && !hostMatches(host, PolicyDefaults.STREAM8_HOST)
-        topBar.visibility = if (external) View.VISIBLE else View.GONE
+        val target = if (external) View.VISIBLE else View.GONE
+        if (topBar.visibility == target) return
+        topBar.visibility = target
+        applyContentTopInset()
     }
 
     // ------------------------------------------------------------------ WebController.Ui
