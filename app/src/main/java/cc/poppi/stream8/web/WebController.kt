@@ -59,12 +59,19 @@ class WebController(
         fun onLoadFinished()
         fun onLoadError(kind: LoadErrorKind)
         fun onBlocked(url: String, reason: Reason)
+        fun onThemeColor(color: Int)
         fun onRenderProcessGone()
         fun showCustomView(view: View, callback: WebChromeClient.CustomViewCallback)
         fun hideCustomView()
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val themeSampler = object : Runnable {
+        override fun run() {
+            sampleThemeColor()
+            mainHandler.postDelayed(this, THEME_SAMPLE_MS)
+        }
+    }
     private val launcher = ExternalAppLauncher(activity)
     private var lastGoodUrl: String? = null
     private var lastRecoveryAt = 0L
@@ -105,6 +112,7 @@ class WebController(
     }
 
     fun destroyWebView() {
+        stopThemeSampling()
         webView.stopLoading()
         (webView.parent as? ViewGroup)?.removeView(webView)
         webView.destroy()
@@ -119,6 +127,31 @@ class WebController(
     fun loadImport(url: String) {
         policy.onHomeRequested()
         webView.loadUrl(url)
+    }
+
+    // Il tema del sito cambia senza navigazione: si legge il colore effettivo
+    // dalla pagina e lo si applica alle barre di sistema dal lato nativo.
+    fun startThemeSampling() {
+        mainHandler.removeCallbacks(themeSampler)
+        mainHandler.post(themeSampler)
+    }
+
+    fun stopThemeSampling() {
+        mainHandler.removeCallbacks(themeSampler)
+    }
+
+    private fun sampleThemeColor() {
+        if (!::webView.isInitialized) return
+        webView.evaluateJavascript(THEME_COLOR_SCRIPT) { value ->
+            parseThemeColor(value)?.let { ui.onThemeColor(it) }
+        }
+    }
+
+    private fun parseThemeColor(value: String?): Int? {
+        // evaluateJavascript restituisce JSON: una stringa arriva tra virgolette.
+        val raw = value?.trim()?.removeSurrounding("\"") ?: return null
+        if (!raw.startsWith("#")) return null
+        return runCatching { Color.parseColor(raw) }.getOrNull()
     }
 
     fun retry() {
@@ -216,6 +249,7 @@ class WebController(
 
         override fun onPageFinished(view: WebView?, url: String?) {
             ui.onLoadFinished()
+            sampleThemeColor()
         }
 
         override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
@@ -337,5 +371,13 @@ class WebController(
 
     private companion object {
         const val POPUP_TIMEOUT_MS = 15_000L
+        const val THEME_SAMPLE_MS = 1_000L
+
+        /**
+         * Legge il colore del tema che il sito pubblica in `meta[name=theme-color]`
+         * (aggiornato a ogni cambio tema); se manca, usa lo sfondo del body.
+         * Nessun bridge JavaScript: è una lettura sola andata.
+         */
+        const val THEME_COLOR_SCRIPT = """(function(){var m=document.querySelector('meta[name="theme-color"]');if(m&&m.content)return m.content;var s=getComputedStyle(document.body);return s?s.backgroundColor:'';})()"""
     }
 }

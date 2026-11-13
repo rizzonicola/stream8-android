@@ -46,10 +46,14 @@ class MainActivity : ComponentActivity(), WebController.Ui {
     private lateinit var webView: WebView
 
     private lateinit var webLayer: FrameLayout
+    private lateinit var root: FrameLayout
     private lateinit var fullscreenContainer: FrameLayout
     private lateinit var progressBar: ProgressBar
     private lateinit var errorView: LinearLayout
     private lateinit var errorText: TextView
+
+    /** Colore del tema della pagina, applicato alle aree delle barre di sistema. */
+    private var barColor = Color.BLACK
 
     private var customView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
@@ -73,6 +77,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         prefs = Prefs(this)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         buildLayout()
+        barColor = getColor(R.color.background)
         applySystemBarIcons()
 
         // Dopo la morte del processo: stato di navigazione e domini dei servizi già autorizzati.
@@ -86,14 +91,20 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         onBackPressedDispatcher.addCallback(this, backCallback)
 
         val saved = savedInstanceState?.getBundle(KEY_WEB)
-        if (saved == null || webView.restoreState(saved) == null) controller.loadHome()
-        if (savedInstanceState == null && !prefs.firstRunDone) showImportDialog(firstRun = true)
+        val restored = saved != null && webView.restoreState(saved) != null
+        if (!restored) {
+            // Al primo avvio si decide prima di caricare la home: se l'utente
+            // importa, il link è la prima pagina e non viene sovrascritto dalla
+            // navigazione iniziale ancora in corso.
+            if (savedInstanceState == null && !prefs.firstRunDone) showImportDialog(firstRun = true)
+            else controller.loadHome()
+        }
     }
 
     // ------------------------------------------------------------------ layout
 
     private fun buildLayout() {
-        val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+        root = FrameLayout(this).apply { setBackgroundColor(getColor(R.color.background)) }
 
         webLayer = FrameLayout(this)
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -236,6 +247,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
                 dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
                     prefs.firstRunDone = true
                     dialog.dismiss()
+                    controller.loadHome()
                 }
             }
         }
@@ -252,12 +264,21 @@ class MainActivity : ComponentActivity(), WebController.Ui {
             .show()
     }
 
-    /** Icone chiare sulle barre trasparenti: il tema dell'app è sempre scuro. */
+    /** Icone scure sui temi chiari, chiare sui temi scuri. */
     private fun applySystemBarIcons() {
+        val darkIcons = Color.luminance(barColor) > 0.5f
         WindowInsetsControllerCompat(window, window.decorView).apply {
-            isAppearanceLightStatusBars = false
-            isAppearanceLightNavigationBars = false
+            isAppearanceLightStatusBars = darkIcons
+            isAppearanceLightNavigationBars = darkIcons
         }
+    }
+
+    /** Il sito aggiorna `meta[name=theme-color]` a ogni cambio tema: la barra lo segue. */
+    override fun onThemeColor(color: Int) {
+        if (color == barColor) return
+        barColor = color
+        root.setBackgroundColor(color)
+        applySystemBarIcons()
     }
 
     // ------------------------------------------------------------------ WebController.Ui
@@ -357,10 +378,12 @@ class MainActivity : ComponentActivity(), WebController.Ui {
     override fun onResume() {
         super.onResume()
         webView.onResume()
+        controller.startThemeSampling()
         applyImmersive()
     }
 
     override fun onPause() {
+        controller.stopThemeSampling()
         webView.onPause()
         android.webkit.CookieManager.getInstance().flush() // la sessione sopravvive alla chiusura dell'app
         super.onPause()

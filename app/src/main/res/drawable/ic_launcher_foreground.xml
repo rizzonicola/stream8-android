@@ -5,20 +5,22 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Anello e triangolo ripresi dall'icona della PWA. -->
+    <!-- Anello e triangolo in proporzione alla variante maskable della PWA:
+         46dp di diametro stanno nella zona sicura dell'icona adattiva (66dp),
+         senza risultare tagliati o ingranditi dalla maschera del launcher. -->
     <path
-        android:pathData="M16.875,54a37.125,37.125 0 1,1 74.25,0a37.125,37.125 0 1,1 -74.25,0"
+        android:pathData="M31.01,54a22.99,22.99 0 1,1 45.98,0a22.99,22.99 0 1,1 -45.98,0"
         android:fillColor="#00000000"
         android:strokeColor="#4FD1C5"
-        android:strokeWidth="2.11" />
-    <path android:pathData="M43.88,33.33L77.63,54L43.88,74.67Z">
+        android:strokeWidth="1.31" />
+    <path android:pathData="M47.73,41.2L68.62,54L47.73,66.8Z">
         <aapt:attr name="android:fillColor">
             <gradient
                 android:type="linear"
-                android:startX="43.88"
-                android:startY="33.33"
-                android:endX="77.63"
-                android:endY="74.67">
+                android:startX="47.73"
+                android:startY="41.2"
+                android:endX="68.62"
+                android:endY="66.8">
                 <item android:offset="0" android:color="#8CE5DB" />
                 <item android:offset="1" android:color="#0F8B8D" />
             </gradient>
