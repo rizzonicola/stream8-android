@@ -7,7 +7,7 @@ Questo repository è **separato** da [`rizzonicola/stream8`](https://github.com/
 ricostruisce il sito in Kotlin, carica `https://stream8.poppi.cc/`.
 
 > **Stato della verifica:** test unitari e build debug/release firmata eseguiti localmente il 13/11/2026 con JDK 17,
-> Gradle 8.9 e Android SDK 35: tutti verdi. La release GitHub `v0.0.6` è l'ultima verifica end-to-end dei workflow:
+> Gradle 8.9 e Android SDK 35: tutti verdi. La release GitHub `v0.0.7` è l'ultima verifica end-to-end dei workflow:
 > vedi [Stato della verifica](#stato-della-verifica).
 
 ## Cosa fa
@@ -201,7 +201,7 @@ distribuito con la stessa licenza e fonte dell'icona e del banner dell'app.
 |---|---|
 | Compilazione Gradle/Kotlin/APK | **Eseguita** localmente (Gradle 8.9, JDK 17, Android SDK 35): debug e release firmata OK |
 | Test unitari (66 casi) | **Eseguiti** localmente: tutti PASS |
-| Workflow GitHub Actions | Sintassi YAML valida; esecuzione end-to-end con le release `v0.0.3`, `v0.0.4`, `v0.0.5` e `v0.0.6` |
+| Workflow GitHub Actions | Sintassi YAML valida; esecuzione end-to-end con le release `v0.0.3`, `v0.0.4`, `v0.0.5`, `v0.0.6` e `v0.0.7` |
 | Aggiornamento adblock (OISD) | **Verificato** su Waydroid con l'APK `0.0.5`: 62.336 domini scaricati e applicati; Stream8 carica regolarmente |
 | Fascia superiore e navbar | **Verificata** su Waydroid con inset superiore forzato a 60 px: su TMDB la fascia occupa `0..60` e la WebView inizia a `y=60`, senza coprire il contenuto; su Stream8 la fascia è `GONE` e la WebView parte da `0`. L'emulatore non espone un inset reale maggiore di zero, quindi il test usa un inset temporaneo |
 | Lingua dell'interfaccia nativa | **Verificata** su Waydroid: con il sito in inglese, francese e italiano, menu, Impostazioni, regole e Info e licenze cambiano lingua; con **Automatico** seguono la lingua di sistema (fallback inglese), come il sito |
