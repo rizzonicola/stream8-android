@@ -25,6 +25,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.annotation.RequiresApi
 import cc.poppi.stream8.BuildConfig
+import cc.poppi.stream8.NativeLocale
 import cc.poppi.stream8.Prefs
 import cc.poppi.stream8.adblock.AdBlocker
 import cc.poppi.stream8.navigation.LoadErrorKind
@@ -37,6 +38,7 @@ import cc.poppi.stream8.navigation.Reason
 import cc.poppi.stream8.navigation.UrlParser
 import cc.poppi.stream8.navigation.Verdict
 import cc.poppi.stream8.navigation.WebAction
+import cc.poppi.stream8.navigation.hostMatches
 import java.io.ByteArrayInputStream
 
 /**
@@ -61,6 +63,7 @@ class WebController(
         fun onLoadError(kind: LoadErrorKind)
         fun onBlocked(url: String, reason: Reason)
         fun onThemeColor(color: Int)
+        fun onUiLanguage(language: String)
         fun onMainFrameHost(host: String?)
         fun onRenderProcessGone()
         fun showCustomView(view: View, callback: WebChromeClient.CustomViewCallback)
@@ -71,12 +74,14 @@ class WebController(
     private val themeSampler = object : Runnable {
         override fun run() {
             sampleThemeColor()
+            sampleUiLanguage()
             mainHandler.postDelayed(this, THEME_SAMPLE_MS)
         }
     }
     private val launcher = ExternalAppLauncher(activity)
     private var lastGoodUrl: String? = null
     private var lastRecoveryAt = 0L
+    private var lastUiLanguage: String? = null
 
     lateinit var webView: WebView
         private set
@@ -110,6 +115,7 @@ class WebController(
         wv.webViewClient = Client()
         wv.webChromeClient = Chrome()
         webView = wv
+        lastUiLanguage = null
         return wv
     }
 
@@ -154,6 +160,25 @@ class WebController(
         val raw = value?.trim()?.removeSurrounding("\"") ?: return null
         if (!raw.startsWith("#")) return null
         return runCatching { Color.parseColor(raw) }.getOrNull()
+    }
+
+    /**
+     * Legge la lingua scelta nelle impostazioni del sito. Solo su Stream8: su un
+     * dominio esterno `localStorage` appartiene a quel sito e non a Stream8.
+     */
+    private fun sampleUiLanguage() {
+        if (!::webView.isInitialized) return
+        val host = policy.currentHost ?: return
+        if (!hostMatches(host, PolicyDefaults.STREAM8_HOST)) return
+        webView.evaluateJavascript(LANGUAGE_SCRIPT) { value ->
+            // evaluateJavascript restituisce JSON: una stringa arriva tra virgolette.
+            val raw = value?.trim()?.removeSurrounding("\"") ?: return@evaluateJavascript
+            val language = NativeLocale.normalize(raw) ?: return@evaluateJavascript
+            if (language != lastUiLanguage) {
+                lastUiLanguage = language
+                ui.onUiLanguage(language)
+            }
+        }
     }
 
     fun retry() {
@@ -252,6 +277,7 @@ class WebController(
         override fun onPageFinished(view: WebView?, url: String?) {
             ui.onLoadFinished()
             sampleThemeColor()
+            sampleUiLanguage()
         }
 
         override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
@@ -383,5 +409,11 @@ class WebController(
          * Nessun bridge JavaScript: è una lettura sola andata.
          */
         const val THEME_COLOR_SCRIPT = """(function(){var m=document.querySelector('meta[name="theme-color"]');if(m&&m.content)return m.content;var s=getComputedStyle(document.body);return s?s.backgroundColor:'';})()"""
+
+        /**
+         * Legge `language` dalle impostazioni del sito e risolve `auto` come fa
+         * il sito (navigator.language, fallback inglese). Nessun bridge JS.
+         */
+        const val LANGUAGE_SCRIPT = """(function(){try{var s=JSON.parse(localStorage.getItem('stream8_settings_v1')||'{}');var l=s.language||'auto';if(l==='auto'||!l){l=(navigator.language||'it').slice(0,2).toLowerCase();}return (l==='it'||l==='en'||l==='fr')?l:'en';}catch(e){return '';}})()"""
     }
 }

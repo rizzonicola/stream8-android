@@ -4,7 +4,8 @@ import android.content.Context
 
 /** Impostazioni persistenti. Lettura sicura da qualunque thread (SharedPreferences è thread-safe). */
 class Prefs(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    private val prefs = (context.applicationContext ?: context)
+        .getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     /** Adblocker attivo di default; si può disattivare completamente dalle Impostazioni. */
     var adblockEnabled: Boolean
@@ -31,11 +32,17 @@ class Prefs(context: Context) {
         get() = prefs.getString(KEY_ADBLOCK_ETAG, null)
         set(value) = prefs.edit().putString(KEY_ADBLOCK_ETAG, value).apply()
 
+    /** Lingua dell'interfaccia nativa rilevata dal sito (`it`, `en`, `fr`). */
+    var uiLanguage: String?
+        get() = prefs.getString(KEY_UI_LANGUAGE, null)
+        set(value) = prefs.edit().putString(KEY_UI_LANGUAGE, value).apply()
+
     private companion object {
         const val KEY_ADBLOCK = "adblock_enabled"
         const val KEY_FIRST_RUN = "first_run_done"
         const val KEY_ADBLOCK_UPDATE = "adblock_last_update"
         const val KEY_ADBLOCK_ATTEMPT = "adblock_last_attempt"
         const val KEY_ADBLOCK_ETAG = "adblock_etag"
+        const val KEY_UI_LANGUAGE = "ui_language"
     }
 }

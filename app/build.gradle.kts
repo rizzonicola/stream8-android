@@ -52,6 +52,14 @@ android {
         }
     }
 
+    // L'interfaccia nativa cambia lingua a runtime: se un giorno si costruisse
+    // un App Bundle, tutte le lingue devono restare incluse (nessuno split).
+    bundle {
+        language {
+            enableSplit = false
+        }
+    }
+
     // Tre ABI + APK universale. Niente x86 a 32 bit.
     splits {
         abi {

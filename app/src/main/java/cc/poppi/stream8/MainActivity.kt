@@ -1,6 +1,7 @@
 package cc.poppi.stream8
 
 import android.app.AlertDialog
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
@@ -55,6 +56,12 @@ class MainActivity : ComponentActivity(), WebController.Ui {
     private lateinit var progressBar: ProgressBar
     private lateinit var errorView: LinearLayout
     private lateinit var errorText: TextView
+    private lateinit var settingsButton: ImageButton
+    private lateinit var retryButton: Button
+    private lateinit var openSettingsButton: Button
+
+    /** Ultimo errore mostrato: serve per ridisegnarlo se cambia la lingua. */
+    private var lastErrorKind: LoadErrorKind? = null
 
     /** Colore del tema della pagina, applicato alle aree delle barre di sistema. */
     private var barColor = Color.BLACK
@@ -138,10 +145,10 @@ class MainActivity : ComponentActivity(), WebController.Ui {
             visibility = View.GONE // su Stream8 la pagina arriva fino in alto; fuori da Stream8 si mostra
         }
         errorView = buildErrorView()
-        val settingsButton = ImageButton(this).apply {
+        settingsButton = ImageButton(this).apply {
             setImageResource(R.drawable.ic_more_vert)
             setBackgroundResource(R.drawable.bg_floating_button)
-            contentDescription = getString(R.string.cd_settings)
+            contentDescription = localized().getString(R.string.cd_settings)
             alpha = 0.35f
             setOnClickListener { showMenu(it) }
         }
@@ -206,28 +213,31 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         visibility = View.GONE
         isClickable = true // l'overlay assorbe i tocchi, non arrivano alla pagina sottostante
 
+        val lc = localized()
         errorText = TextView(context).apply {
             setTextColor(Color.WHITE)
             textSize = 16f
             gravity = Gravity.CENTER
         }
         addView(errorText)
+        retryButton = Button(context).apply {
+            setText(lc.getString(R.string.retry))
+            setOnClickListener {
+                errorView.visibility = View.GONE // non `visibility`: dentro apply sarebbe il Button
+                controller.retry()
+            }
+        }
         addView(
-            Button(context).apply {
-                setText(R.string.retry)
-                setOnClickListener {
-                    errorView.visibility = View.GONE // non `visibility`: dentro apply sarebbe il Button
-                    controller.retry()
-                }
-            },
+            retryButton,
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(24)
             },
         )
-        addView(Button(context).apply {
-            setText(R.string.open_settings)
+        openSettingsButton = Button(context).apply {
+            setText(lc.getString(R.string.open_settings))
             setOnClickListener { openSettings() }
-        })
+        }
+        addView(openSettingsButton)
     }
 
     private fun attachNewWebView() {
@@ -236,6 +246,16 @@ class MainActivity : ComponentActivity(), WebController.Ui {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    /** Contesto per i testi nativi nella lingua scelta sul sito. */
+    private fun localized(): Context = NativeLocale.localized(this)
+
+    private fun errorRes(kind: LoadErrorKind): Int = when (kind) {
+        LoadErrorKind.OFFLINE -> R.string.error_offline
+        LoadErrorKind.TIMEOUT -> R.string.error_timeout
+        LoadErrorKind.TLS -> R.string.error_tls
+        LoadErrorKind.OTHER -> R.string.error_other
+    }
 
     private fun loadAdBlocker(): AdBlocker? = try {
         assets.open("adblock-domains.txt").use { AdBlocker.fromStream(it) }
@@ -248,10 +268,11 @@ class MainActivity : ComponentActivity(), WebController.Ui {
     }
 
     private fun showMenu(anchor: View) {
+        val lc = localized()
         PopupMenu(this, anchor).apply {
-            menu.add(0, MENU_SETTINGS, 0, R.string.menu_settings)
-            menu.add(0, MENU_IMPORT, 1, R.string.menu_import)
-            menu.add(0, MENU_INFO, 2, R.string.menu_info)
+            menu.add(0, MENU_SETTINGS, 0, lc.getString(R.string.menu_settings))
+            menu.add(0, MENU_IMPORT, 1, lc.getString(R.string.menu_import))
+            menu.add(0, MENU_INFO, 2, lc.getString(R.string.menu_info))
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     MENU_SETTINGS -> openSettings()
@@ -266,8 +287,9 @@ class MainActivity : ComponentActivity(), WebController.Ui {
 
     /** Link di condivisione delle impostazioni; il sito mostra poi la conferma di importazione. */
     private fun showImportDialog(firstRun: Boolean) {
+        val lc = localized()
         val input = EditText(this).apply {
-            hint = getString(R.string.import_hint)
+            hint = lc.getString(R.string.import_hint)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             setSingleLine(true)
         }
@@ -276,18 +298,21 @@ class MainActivity : ComponentActivity(), WebController.Ui {
             addView(input, FrameLayout.LayoutParams(MATCH, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         val dialog = AlertDialog.Builder(this)
-            .setTitle(R.string.import_title)
-            .setMessage(if (firstRun) R.string.import_first_run_message else R.string.import_message)
+            .setTitle(lc.getString(R.string.import_title))
+            .setMessage(lc.getString(if (firstRun) R.string.import_first_run_message else R.string.import_message))
             .setView(container)
-            .setPositiveButton(R.string.import_action, null)
-            .setNegativeButton(if (firstRun) R.string.continue_without_import else android.R.string.cancel, null)
+            .setPositiveButton(lc.getString(R.string.import_action), null)
+            .setNegativeButton(
+                lc.getString(if (firstRun) R.string.continue_without_import else android.R.string.cancel),
+                null,
+            )
             .create()
 
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val url = ImportLink.parse(input.text.toString())
                 if (url == null) {
-                    input.error = getString(R.string.import_invalid)
+                    input.error = lc.getString(R.string.import_invalid)
                 } else {
                     prefs.firstRunDone = true
                     dialog.dismiss()
@@ -308,10 +333,11 @@ class MainActivity : ComponentActivity(), WebController.Ui {
     }
 
     private fun showInfo() {
+        val lc = localized()
         AlertDialog.Builder(this)
-            .setTitle(R.string.info_title)
-            .setMessage(R.string.info_body)
-            .setPositiveButton(android.R.string.ok, null)
+            .setTitle(lc.getString(R.string.info_title))
+            .setMessage(lc.getString(R.string.info_body))
+            .setPositiveButton(lc.getString(android.R.string.ok), null)
             .show()
     }
 
@@ -333,6 +359,22 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         applySystemBarIcons()
     }
 
+    /** Lingua scelta sul sito: aggiorna i testi nativi senza ricreare la WebView. */
+    override fun onUiLanguage(language: String) {
+        val lang = NativeLocale.normalize(language) ?: return
+        if (prefs.uiLanguage == lang) return
+        prefs.uiLanguage = lang
+        applyNativeLanguage()
+    }
+
+    private fun applyNativeLanguage() {
+        val lc = localized()
+        settingsButton.contentDescription = lc.getString(R.string.cd_settings)
+        retryButton.text = lc.getString(R.string.retry)
+        openSettingsButton.text = lc.getString(R.string.open_settings)
+        lastErrorKind?.let { errorText.text = lc.getString(errorRes(it)) }
+    }
+
     /** Fascia a tema solo nelle pagine esterne (TMDB, servizi, ecc.), non su Stream8. */
     override fun onMainFrameHost(host: String?) {
         val external = host != null && !hostMatches(host, PolicyDefaults.STREAM8_HOST)
@@ -345,6 +387,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
     // ------------------------------------------------------------------ WebController.Ui
 
     override fun onLoadStarted() {
+        lastErrorKind = null
         errorView.visibility = View.GONE
         progressBar.progress = 0
         progressBar.visibility = View.VISIBLE
@@ -360,14 +403,8 @@ class MainActivity : ComponentActivity(), WebController.Ui {
     }
 
     override fun onLoadError(kind: LoadErrorKind) {
-        errorText.setText(
-            when (kind) {
-                LoadErrorKind.OFFLINE -> R.string.error_offline
-                LoadErrorKind.TIMEOUT -> R.string.error_timeout
-                LoadErrorKind.TLS -> R.string.error_tls
-                LoadErrorKind.OTHER -> R.string.error_other
-            },
-        )
+        lastErrorKind = kind
+        errorText.text = localized().getString(errorRes(kind))
         progressBar.visibility = View.GONE
         errorView.visibility = View.VISIBLE
     }
@@ -376,10 +413,11 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         val now = SystemClock.uptimeMillis()
         if (now - lastToastAt < 2500) return // le pagine che tentano reindirizzamenti a raffica non invadono lo schermo
         lastToastAt = now
+        val lc = localized()
         val message = when (reason) {
-            Reason.EXTERNAL_APP -> getString(R.string.no_app)
-            Reason.APP_LAUNCH_FORBIDDEN -> getString(R.string.blocked_app)
-            else -> getString(R.string.blocked_navigation, UrlParser.parse(url)?.host ?: "")
+            Reason.EXTERNAL_APP -> lc.getString(R.string.no_app)
+            Reason.APP_LAUNCH_FORBIDDEN -> lc.getString(R.string.blocked_app)
+            else -> lc.getString(R.string.blocked_navigation, UrlParser.parse(url)?.host ?: "")
         }
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }

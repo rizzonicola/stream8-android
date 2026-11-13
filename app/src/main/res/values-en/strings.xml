@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Stream8</string>
+
+    <string name="settings_title">Settings</string>
+    <string name="cd_settings">Settings</string>
+    <string name="shortcut_settings_short">Settings</string>
+    <string name="shortcut_settings_long">Stream8 settings</string>
+
+    <string name="adblock_title">Ad and tracker blocking</string>
+    <string name="adblock_desc">Lightweight filter based on a domain list (OISD Small), updated automatically when the app starts (at most once every 7 days). It does not block Stream8, TMDB, first-party requests or main-frame navigation. It does not guarantee complete ad blocking. The change applies to subsequent requests: reload the page to apply it fully.</string>
+    <string name="action_reload_home">Reload Stream8</string>
+    <string name="action_nav_rules">Navigation rules</string>
+    <string name="version_label">Version %1$s (build %2$d)</string>
+
+    <string name="menu_settings">Settings</string>
+    <string name="menu_import">Import settings…</string>
+    <string name="menu_info">Info and licenses</string>
+
+    <string name="import_title">Import settings</string>
+    <string name="import_message">Paste the Stream8 settings sharing link.</string>
+    <string name="import_first_run_message">If you have a settings sharing link, paste it here. Otherwise continue without importing. This message appears only on first launch.</string>
+    <string name="import_hint">https://stream8.poppi.cc/import-settings?data=…</string>
+    <string name="import_action">Import</string>
+    <string name="continue_without_import">Continue without importing</string>
+    <string name="import_invalid">Invalid link. Paste a link https://stream8.poppi.cc/import-settings?data=…</string>
+
+    <string name="info_title">Info and licenses</string>
+    <string name="info_body">Stream8 for Android is a WebView wrapper for Stream8 (stream8.poppi.cc): both projects are by the same author. It is not affiliated with TMDB or the linked streaming services.\n\nACKNOWLEDGEMENTS\n• Stream8 — original web project, rizzonicola/stream8 (GPL-3.0).\n• Kotlin, AndroidX Core and AndroidX Activity — Apache License 2.0.\n• Google Guava — Apache License 2.0; includes the Public Suffix List (MPL 2.0).\n• OISD Small — domain list for ad and tracker blocking, © Stephan van Ruth, GPL-3.0 (https://oisd.nl); the app downloads and updates it automatically.\n• Icon and banner — graphics from the Stream8 project.\n• Movie, TV and anime data — provided by TMDB through Stream8. This product uses the TMDB API but is not endorsed or certified by TMDB.\n\nLEGAL NOTES\n• Trademarks, names and content belong to their respective owners.\n• The user is responsible for using third-party services and for complying with their terms.\n• No telemetry, no ads, no access to local files, camera, microphone or location. Cookies and browsing data stay on the device.\n• App license: GNU General Public License v3.0 (GPL-3.0), © 2026 Nicola Rizzo. The Stream8 web project is distributed under the same license.</string>
+
+    <string name="nav_rules_title">Navigation rules</string>
+    <string name="nav_rules_body">• Start from Stream8 (stream8.poppi.cc).\n\n• When you tap a service on Stream8, the page opens inside the app and the authorized domain becomes the service domain, including all its subdomains.\n\n• Without TMDB in the chain, the service cannot open other domains or Stream8: use the Back button to return.\n\n• TMDB (themoviedb.org) is always reachable. When the chain goes through TMDB, services can open new domains with a real tap or through server redirects (e.g. TMDB → JustWatch → Prime Video).\n\n• From Stream8, TMDB and services in the TMDB cascade, a link can open the compatible Android app (e.g. an installed streaming app) with a real tap. A service opened directly from Stream8, without TMDB, cannot launch apps; redirects and automatic navigations never open apps.\n\n• HTTPS only. Invalid certificates are never accepted. No external browser is opened.</string>
+
+    <string name="retry">Retry</string>
+    <string name="open_settings">Settings</string>
+    <string name="error_offline">No connection or server unreachable.</string>
+    <string name="error_timeout">The server is not responding. Try again shortly.</string>
+    <string name="error_tls">Insecure connection: invalid certificate. The page was not loaded.</string>
+    <string name="error_other">Unable to load the page.</string>
+
+    <string name="blocked_navigation">Navigation blocked: %1$s</string>
+    <string name="blocked_app">This page cannot open other apps</string>
+    <string name="no_app">No compatible app found</string>
+</resources>

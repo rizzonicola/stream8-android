@@ -2,6 +2,7 @@ package cc.poppi.stream8
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Button
@@ -10,6 +11,11 @@ import android.widget.TextView
 
 /** Impostazioni minime: adblocker, ricarica Stream8, versione, regole di navigazione. */
 class SettingsActivity : Activity() {
+
+    /** Le Impostazioni native seguono la lingua scelta sul sito. */
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(NativeLocale.localized(newBase))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
