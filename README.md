@@ -108,7 +108,7 @@ Riassunto (tabella completa e casi limite in [docs/NAVIGAZIONE.md](docs/NAVIGAZI
 - All'avvio è autorizzato `stream8.poppi.cc` (e TMDB).
 - Se **Stream8** apre `sito.com` con un tocco reale, il dominio autorizzato diventa `sito.com` + tutti i suoi sottodomini; tutti i percorsi sono consentiti. Nessun riavvio: tornando a Stream8 e scegliendo `sito2.net`, il dominio autorizzato diventa `sito2.net`.
 - Senza TMDB nella catena, da `sito.com` si può andare solo su `sito.com`, i suoi sottodomini e TMDB. `sito1.com`, `altrosito.com`, `sito.com.evil.net`, `sito.com@evil.com` e i domini omografi sono bloccati.
-- Quando viene caricata una pagina **TMDB**, la navigazione va **a cascata**: TMDB e ogni servizio aperto possono aprire nuovi domini con un tocco reale, e i nuovi domini possono fare altrettanto, senza limiti di passaggi. Tornando a Stream8 la cascata si azzera: la catena successiva riparte da zero.
+- Quando viene caricata una pagina **TMDB**, la navigazione va **a cascata**: TMDB e ogni servizio aperto possono aprire nuovi domini con un tocco reale **o tramite i redirect del server** (es. TMDB → JustWatch → Prime Video), e i nuovi domini possono fare altrettanto, senza limiti di passaggi. Tornando a Stream8 la cascata si azzera: la catena successiva riparte da zero.
 - Il confronto è per etichette del dominio (mai per sottostringa) sul **dominio registrabile** calcolato con la **Public Suffix List** (incorporata in Guava `InternetDomainName`): `foo.co.uk` non autorizza `bar.co.uk`. Gli URL sono analizzati da un parser rigoroso che rifiuta userinfo (`@`), backslash, spazi, IP e host non validi.
 - Per tornare a Stream8 da un servizio si usa **Indietro** (la navigazione in cronologia è ammessa solo verso pagine già autorizzate nella sessione) oppure "Ricarica Stream8" nelle Impostazioni.
 
@@ -119,7 +119,9 @@ Non vale per domini simili (`themoviedb.org.evil.com`, `notthemoviedb.org`, `tmd
 risorse** (immagini): non è una destinazione di navigazione e non viene mai filtrato dall'adblocker.
 
 La cascata vale solo per le **navigazioni web**: l'apertura di app Android resta consentita esclusivamente da Stream8 e TMDB
-(vedi sotto), non dai servizi aperti a cascata. Redirect e navigazioni automatiche non aprono mai nuovi domini.
+(vedi sotto), non dai servizi aperti a cascata. I redirect restano chiusi verso nuovi domini finché la cascata non è attiva
+(quindi mai da soli Stream8); una volta partita da TMDB, i redirect possono attraversare più domini senza altri tocchi
+(es. JustWatch → Prime Video).
 
 ## Apertura delle applicazioni Android
 

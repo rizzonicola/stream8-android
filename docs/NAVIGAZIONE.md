@@ -25,11 +25,13 @@ dell'utente, redirect sì/no).
 | STREAM8 → IP, `localhost`, suffisso pubblico | – | **blocca** | no |
 | TMDB → TMDB / Stream8 | – | carica | no |
 | TMDB → dominio del servizio aperto | sì | carica | sì |
-| TMDB → altro dominio | sì | **apre come nuovo servizio** (attiva la cascata) | **sì**, prima della WebView |
-| TMDB → altro dominio | no / redirect | **blocca** | no |
+| TMDB → altro dominio | sì | **apre come nuovo servizio** (avvia la cascata) | **sì**, prima della WebView |
+| TMDB → altro dominio | redirect del server | **apre come nuovo servizio** (avvia la cascata) | no |
+| TMDB → altro dominio | no (né gesto né redirect) | **blocca** | no |
 | SERVICE con cascata attiva → dominio del servizio | – | carica | no |
 | SERVICE con cascata attiva → altro dominio (nome valido) | sì | **apre come nuovo servizio** (la cascata prosegue) | no |
-| SERVICE con cascata attiva → altro dominio | no / redirect | **blocca** | no |
+| SERVICE con cascata attiva → altro dominio | redirect del server | **apre come nuovo servizio** (la cascata prosegue) | no |
+| SERVICE con cascata attiva → altro dominio | no (né gesto né redirect) | **blocca** | no |
 | SERVICE senza cascata → qualunque altro | – | **blocca** | **no** |
 | SERVICE → TMDB | – | carica | **no** |
 | SERVICE → Stream8 | – | **blocca** | no |
@@ -42,16 +44,16 @@ le stesse regole e **richiedono** un gesto reale.
 ## Cascata TMDB
 
 La cascata parte quando viene caricata una pagina TMDB (anche raggiunta da un servizio) e resta attiva finché si resta
-nella catena: da quel momento **TMDB e ogni servizio aperto possono aprire nuovi domini con un click reale**, e i nuovi
-domini possono fare altrettanto, senza limiti di passaggi. Senza TMDB nella catena, un servizio può navigare solo nel
-proprio dominio (più TMDB): un link verso un altro sito viene bloccato.
+nella catena: da quel momento **TMDB e ogni servizio aperto possono aprire nuovi domini con un click reale o tramite i
+redirect del server** (es. TMDB → JustWatch → Prime Video), e i nuovi domini possono fare altrettanto, senza limiti di
+passaggi. Senza TMDB nella catena, un servizio può navigare solo nel proprio dominio (più TMDB): un link verso un altro
+sito viene bloccato.
 
 La cascata si azzera quando si torna a Stream8 (Indietro/Avanti o "Ricarica Stream8"): la catena successiva riparte da
-Stream8 e, se non passa da TMDB, resta senza cascata. Redirect del server e navigazioni automatiche non aprono mai nuovi
-domini, nemmeno con la cascata attiva.
-
-I redirect del server restano nel dominio che Stream8 ha appena aperto (es. `sito.com` → `www.sito.com` → `login.sito.com`);
-un redirect verso un altro dominio è bloccato. Dopo un errore di rete l'autorizzazione pendente decade.
+Stream8 e, se non passa da TMDB, resta senza cascata. Senza cascata i redirect restano nel dominio che Stream8 ha appena
+aperto (es. `sito.com` → `www.sito.com` → `login.sito.com`) e un redirect verso un altro dominio è bloccato; le
+navigazioni automatiche senza gesto e senza redirect sono sempre bloccate. Dopo un errore di rete l'autorizzazione
+pendente decade.
 
 ## Dominio registrabile e sottodomini
 
@@ -68,8 +70,8 @@ uguale ad esso o termina con `.` + dominio. Esempi per `sito.com`:
 ## Tre livelli di difesa (`WebController`)
 
 1. **Decisione** — `shouldOverrideUrlLoading` (link, JavaScript, redirect) e `onCreateWindow` (popup). Qui avvengono l'apertura di app e il cambio di dominio.
-2. **Rete di sicurezza** — `shouldInterceptRequest` sul frame principale: respinge richieste verso domini mai autorizzati che il livello 1 non vede (es. invio di form `POST`) e ripristina l'ultima pagina valida.
-3. **Verifica della pagina caricata** — `doUpdateVisitedHistory` registra l'origine effettiva e verifica anche Indietro/Avanti: la cronologia ammette solo domini autorizzati in questa sessione.
+2. **Rete di sicurezza** — `shouldInterceptRequest` sul frame principale: respinge richieste verso domini mai autorizzati che il livello 1 non vede (es. invio di form `POST`) e ripristina l'ultima pagina valida; con la cascata attiva lascia passare i domini attraversati dai redirect.
+3. **Verifica della pagina caricata** — `doUpdateVisitedHistory` registra l'origine effettiva e verifica anche Indietro/Avanti: la cronologia ammette solo domini autorizzati in questa sessione (con la cascata attiva registra i nuovi domini raggiunti dai redirect).
 
 ## Risorse incorporate
 

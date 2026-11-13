@@ -266,12 +266,40 @@ class NavigationPolicyTest {
     }
 
     @Test
-    fun `da TMDB i link esterni si aprono a cascata solo con un click reale`() {
+    fun `da TMDB i link esterni si aprono a cascata con un click o con un redirect del server`() {
         val p = NavigationPolicy().also { assertTrue(it.onMainFrameCommitted("https://www.themoviedb.org/")) }
         p.openService("https://sito.com/") // click reale: nuovo servizio
-        p.assertBlocked(auto("https://altro.net/"))
-        p.assertBlocked(redirect("https://altro.net/"))
+        p.assertBlocked(auto("https://altro.net/")) // navigazione automatica senza redirect: no
+        val v = p.evaluate(redirect("https://altro.net/"))
+        assertEquals(WebAction.LOAD_NEW_SERVICE, v.web) // redirect del server dentro la cascata: si'
+        assertFalse(v.mayLaunchApp)
         p.assertLoads(click("https://www.sito.com/watch")) // il dominio corrente resta navigabile
+    }
+
+    @Test
+    fun `la catena TMDB - JustWatch - Prime Video attraversa piu' redirect senza altri click`() {
+        val p = onStream8()
+        assertTrue(p.onMainFrameCommitted("https://www.themoviedb.org/tv/1/watch"))
+
+        // Click sul provider: si apre il dominio di tracciamento di JustWatch.
+        val v = p.evaluate(click("https://click.justwatch.com/a?cx=1&r=https%3A%2F%2Fwww.primevideo.com%2Fdetail"))
+        assertEquals(WebAction.LOAD_NEW_SERVICE, v.web)
+        p.accept(v)
+
+        // Catena di redirect del server: ogni salto attraversa un dominio nuovo.
+        listOf(
+            "https://primevideo-eu.pxf.io/1rKvQm?subId1=x",
+            "https://www.ojrq.net/p/?return=x",
+            "https://primevideo-eu.pxf.io/c/1206980/1721981/20021",
+            "https://www.primevideo.com/detail/x",
+        ).forEach { url ->
+            val r = p.evaluate(redirect(url))
+            assertEquals(url, WebAction.LOAD_NEW_SERVICE, r.web)
+            assertFalse(url, r.mayLaunchApp) // un redirect non apre mai app esterne
+            p.accept(r)
+        }
+        assertTrue(p.onMainFrameCommitted("https://www.primevideo.com/detail/x"))
+        p.assertLoads(click("https://www.primevideo.com/"))
     }
 
     @Test
@@ -450,6 +478,22 @@ class NavigationPolicyTest {
         assertFalse(p.isMainFrameRequestPermitted("https://sito1.com/"))
         assertFalse(p.isMainFrameRequestPermitted("http://sito.com/"))
         assertFalse(p.isMainFrameRequestPermitted("not a url"))
+    }
+
+    @Test
+    fun `in cascata la rete di sicurezza e la verifica della pagina accettano i domini dei redirect`() {
+        val p = NavigationPolicy().also { assertTrue(it.onMainFrameCommitted("https://www.themoviedb.org/")) }
+        // Un redirect puo' raggiungere un dominio mai visto senza passare da shouldOverrideUrlLoading.
+        assertTrue(p.isMainFrameRequestPermitted("https://primevideo-eu.pxf.io/x"))
+        assertTrue(p.isMainFrameRequestPermitted("https://www.primevideo.com/detail/x"))
+        // La pagina caricata viene comunque registrata come servizio della catena.
+        assertTrue(p.onMainFrameCommitted("https://www.primevideo.com/detail/x"))
+        p.assertLoads(click("https://www.primevideo.com/other"))
+        p.openService("https://altro.net/") // e la cascata prosegue
+
+        // Senza cascata la rete di sicurezza resta chiusa.
+        val q = onStream8()
+        assertFalse(q.isMainFrameRequestPermitted("https://primevideo-eu.pxf.io/x"))
     }
 
     @Test

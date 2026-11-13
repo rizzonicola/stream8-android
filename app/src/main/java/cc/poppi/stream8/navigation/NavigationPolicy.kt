@@ -125,9 +125,10 @@ class NavigationPolicy(
                 toStream8 -> deny(Reason.SERVICE_CANNOT_LEAVE)
                 toTmdb -> allow(Reason.TMDB)
                 ctx.service?.contains(host) == true -> allow(Reason.SAME_SERVICE)
-                // Se TMDB e' gia' nella catena, i servizi possono aprirne altri con un click reale.
+                // Se TMDB e' gia' nella catena, i servizi possono aprirne altri con un click reale
+                // o tramite i redirect della catena (es. JustWatch -> Prime Video).
                 !state.cascade -> deny(Reason.OUTSIDE_SERVICE)
-                !request.userGesture || request.redirect -> deny(Reason.NO_USER_GESTURE)
+                !request.userGesture && !request.redirect -> deny(Reason.NO_USER_GESTURE)
                 else -> openNewService(host, mayLaunch)
             }
 
@@ -142,8 +143,9 @@ class NavigationPolicy(
                 toTmdb -> allow(Reason.TMDB)
                 toStream8 -> allow(Reason.SAME_SITE)
                 ctx.service?.contains(host) == true -> Verdict(WebAction.LOAD, mayLaunch, Reason.SAME_SERVICE)
-                // TMDB e' l'origine della cascata: puo' aprire nuovi servizi (e questi altri ancora).
-                !request.userGesture || request.redirect -> deny(Reason.NO_USER_GESTURE)
+                // TMDB e' l'origine della cascata: puo' aprire nuovi servizi con un click reale
+                // o tramite un redirect del server (es. provider -> JustWatch), e questi altri ancora.
+                !request.userGesture && !request.redirect -> deny(Reason.NO_USER_GESTURE)
                 else -> openNewService(host, mayLaunch)
             }
         }
@@ -177,8 +179,16 @@ class NavigationPolicy(
                 state = s.copy(currentHost = host, pending = null, cascade = true)
             else -> {
                 val scope = DomainScope.of(host) ?: return false
-                if (scope.domain !in s.visited) return false
-                state = s.copy(currentHost = host, lastService = scope, pending = null)
+                // In cascata un redirect puo' portare a un dominio non ancora registrato
+                // (catene JustWatch/Prime Video): il caricamento e' gia' stato autorizzato
+                // da evaluate/isMainFrameRequestPermitted, qui si registra soltanto.
+                if (scope.domain !in s.visited && !s.cascade) return false
+                state = s.copy(
+                    currentHost = host,
+                    lastService = scope,
+                    pending = null,
+                    visited = if (scope.domain in s.visited) s.visited else s.visited + scope.domain,
+                )
             }
         }
         return true
@@ -208,7 +218,9 @@ class NavigationPolicy(
         val parsed = UrlParser.parse(url) ?: return false
         if (parsed.scheme != "https") return false
         val host = parsed.host ?: return false
-        return isHostPermitted(host)
+        // Con la cascata attiva il frame principale puo' attraversare piu' domini tramite
+        // redirect che non passano da shouldOverrideUrlLoading.
+        return state.cascade || isHostPermitted(host)
     }
 
     /**
