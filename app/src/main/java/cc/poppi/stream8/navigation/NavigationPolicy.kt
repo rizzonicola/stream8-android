@@ -81,12 +81,15 @@ class NavigationPolicy(
         val pending: DomainScope? = null,
         /** Domini dei servizi autorizzati in questa sessione: servono a Indietro/Avanti nella cronologia. */
         val visited: Set<String> = emptySet(),
+        /** Una volta visitato TMDB, la navigazione può proseguire a cascata su nuovi domini. */
+        val cascade: Boolean = false,
     )
 
     @Volatile
     private var state = State()
 
     val currentHost: String? get() = state.currentHost
+    val cascadeEnabled: Boolean get() = state.cascade
 
     // ---------------------------------------------------------------- decisione
 
@@ -122,7 +125,10 @@ class NavigationPolicy(
                 toStream8 -> deny(Reason.SERVICE_CANNOT_LEAVE)
                 toTmdb -> allow(Reason.TMDB)
                 ctx.service?.contains(host) == true -> allow(Reason.SAME_SERVICE)
-                else -> deny(Reason.OUTSIDE_SERVICE)
+                // Se TMDB e' gia' nella catena, i servizi possono aprirne altri con un click reale.
+                !state.cascade -> deny(Reason.OUTSIDE_SERVICE)
+                !request.userGesture || request.redirect -> deny(Reason.NO_USER_GESTURE)
+                else -> openNewService(host, mayLaunch)
             }
 
             Origin.STREAM8 -> when {
@@ -136,7 +142,9 @@ class NavigationPolicy(
                 toTmdb -> allow(Reason.TMDB)
                 toStream8 -> allow(Reason.SAME_SITE)
                 ctx.service?.contains(host) == true -> Verdict(WebAction.LOAD, mayLaunch, Reason.SAME_SERVICE)
-                else -> Verdict(WebAction.BLOCK, mayLaunch, Reason.OUTSIDE_SERVICE)
+                // TMDB e' l'origine della cascata: puo' aprire nuovi servizi (e questi altri ancora).
+                !request.userGesture || request.redirect -> deny(Reason.NO_USER_GESTURE)
+                else -> openNewService(host, mayLaunch)
             }
         }
     }
@@ -162,9 +170,11 @@ class NavigationPolicy(
         val s = state
         when {
             hostMatches(host, stream8Host) ->
-                state = s.copy(currentHost = host, lastService = null, pending = null)
+                // Si torna alla home: la catena ricomincia, TMDB non e' piu' "gia' visto".
+                state = s.copy(currentHost = host, lastService = null, pending = null, cascade = false)
             hostMatches(host, tmdbDomain) ->
-                state = s.copy(currentHost = host, pending = null)
+                // Da qui in poi ogni pagina puo' aprire nuovi domini, ricorsivamente.
+                state = s.copy(currentHost = host, pending = null, cascade = true)
             else -> {
                 val scope = DomainScope.of(host) ?: return false
                 if (scope.domain !in s.visited) return false
@@ -181,7 +191,7 @@ class NavigationPolicy(
 
     /** L'app sta caricando Stream8 (avvio o "Ricarica Stream8"). */
     fun onHomeRequested() {
-        state = state.copy(currentHost = null, lastService = null, pending = null)
+        state = state.copy(currentHost = null, lastService = null, pending = null, cascade = false)
     }
 
     // ---------------------------------------------------------------- controlli di sicurezza
@@ -216,10 +226,10 @@ class NavigationPolicy(
 
     fun snapshot(): ArrayList<String> = ArrayList(state.visited)
 
-    fun restore(visited: Collection<String>?) {
+    fun restore(visited: Collection<String>?, cascade: Boolean = false) {
         // Si accettano solo domini registrabili validi: uno stato manomesso non può autorizzare altro.
         val valid = visited.orEmpty().filter { DomainScope.of(it)?.domain == it }.toSet()
-        state = state.copy(visited = valid)
+        state = state.copy(visited = valid, cascade = cascade)
     }
 
     // ---------------------------------------------------------------- interni

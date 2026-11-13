@@ -15,7 +15,7 @@ ricostruisce il sito in Kotlin, carica `https://stream8.poppi.cc/`.
 - Apre direttamente Stream8, senza barre né elementi superflui. Tasto Indietro, rotazione, tastiera e video a schermo intero gestiti.
 - Mantiene cookie, Local Storage e sessioni; barra di caricamento discreta; errore di connessione con pulsante **Riprova**.
 - Usa la cache del service worker del sito: la shell si apre subito dalla cache e si aggiorna in background; i dati dinamici restano sempre in rete.
-- Quando da Stream8 si apre un servizio esterno, **solo quel dominio** (con i suoi sottodomini) diventa navigabile; TMDB resta sempre raggiungibile. Dettagli in [docs/NAVIGAZIONE.md](docs/NAVIGAZIONE.md).
+- Quando da Stream8 si apre un servizio esterno, **solo quel dominio** (con i suoi sottodomini) diventa navigabile; TMDB resta sempre raggiungibile. Quando entra in gioco TMDB la navigazione procede **a cascata** su nuovi domini, ricorsivamente. Dettagli in [docs/NAVIGAZIONE.md](docs/NAVIGAZIONE.md).
 - Può aprire app Android installate (es. un'app di streaming) **solo** da pagine Stream8 e TMDB, **solo** con un tocco reale dell'utente.
 - Solo HTTPS, certificati sempre verificati, nessun bridge JavaScript, nessun accesso a file locali, nessun browser esterno.
 - Adblocker leggero a elenco di domini, disattivabile.
@@ -107,15 +107,19 @@ Riassunto (tabella completa e casi limite in [docs/NAVIGAZIONE.md](docs/NAVIGAZI
 
 - All'avvio è autorizzato `stream8.poppi.cc` (e TMDB).
 - Se **Stream8** apre `sito.com` con un tocco reale, il dominio autorizzato diventa `sito.com` + tutti i suoi sottodomini; tutti i percorsi sono consentiti. Nessun riavvio: tornando a Stream8 e scegliendo `sito2.net`, il dominio autorizzato diventa `sito2.net`.
-- Da `sito.com` si può andare solo su `sito.com`, i suoi sottodomini e TMDB. `sito1.com`, `altrosito.com`, `sito.com.evil.net`, `sito.com@evil.com` e i domini omografi sono bloccati.
+- Senza TMDB nella catena, da `sito.com` si può andare solo su `sito.com`, i suoi sottodomini e TMDB. `sito1.com`, `altrosito.com`, `sito.com.evil.net`, `sito.com@evil.com` e i domini omografi sono bloccati.
+- Quando viene caricata una pagina **TMDB**, la navigazione va **a cascata**: TMDB e ogni servizio aperto possono aprire nuovi domini con un tocco reale, e i nuovi domini possono fare altrettanto, senza limiti di passaggi. Tornando a Stream8 la cascata si azzera: la catena successiva riparte da zero.
 - Il confronto è per etichette del dominio (mai per sottostringa) sul **dominio registrabile** calcolato con la **Public Suffix List** (incorporata in Guava `InternetDomainName`): `foo.co.uk` non autorizza `bar.co.uk`. Gli URL sono analizzati da un parser rigoroso che rifiuta userinfo (`@`), backslash, spazi, IP e host non validi.
 - Per tornare a Stream8 da un servizio si usa **Indietro** (la navigazione in cronologia è ammessa solo verso pagine già autorizzate nella sessione) oppure "Ricarica Stream8" nelle Impostazioni.
 
-## Eccezione TMDB
+## Cascata TMDB
 
 `themoviedb.org`, `www.themoviedb.org` e tutti i sottodomini autentici sono sempre raggiungibili, qualunque servizio sia aperto.
 Non vale per domini simili (`themoviedb.org.evil.com`, `notthemoviedb.org`, `tmdb.org`…). `image.tmdb.org` è un host **solo per
 risorse** (immagini): non è una destinazione di navigazione e non viene mai filtrato dall'adblocker.
+
+La cascata vale solo per le **navigazioni web**: l'apertura di app Android resta consentita esclusivamente da Stream8 e TMDB
+(vedi sotto), non dai servizi aperti a cascata. Redirect e navigazioni automatiche non aprono mai nuovi domini.
 
 ## Apertura delle applicazioni Android
 
@@ -157,7 +161,7 @@ app/src/test/   test unitari JVM (JUnit 4)
 ## Limiti conosciuti
 
 - **Servizi su rete locale o in HTTP**: HTTPS è obbligatorio e gli indirizzi IP sono rifiutati. Un server Jellyfin/Plex raggiunto con `http://192.168.x.x:8096` (o con un certificato non valido) **non si apre**. Funzionano nomi di dominio con certificato valido (porta qualsiasi).
-- **Login su un altro dominio** (OAuth/SSO, es. un servizio che autentica su un dominio diverso dal proprio) è bloccato dalla regola "un servizio non può aprire altri domini".
+- **Login su un altro dominio** (OAuth/SSO, es. un servizio che autentica su un dominio diverso dal proprio) è bloccato dalla regola "un servizio non può aprire altri domini", **a meno che** TMDB sia già nella catena: in quel caso il click reale apre il nuovo dominio e la cascata prosegue.
 - **Redirector**: se un link di Stream8 passa da un dominio intermedio che poi reindirizza al servizio vero, il secondo salto è bloccato (i redirect devono restare nel dominio aperto da Stream8).
 - **Frame di origine**: l'API WebView non indica quale frame ha avviato una navigazione. La fiducia è basata sulla pagina principale: un iframe di terze parti dentro una pagina Stream8/TMDB potrebbe far partire un'apertura di app *solo* con un vero tocco dell'utente. Gli iframe non possono comunque navigare altrove senza passare dalla policy.
 - **Iframe di terze parti** sono consentiti (servono ai player); possono caricare contenuti da qualunque host HTTPS, ma non uscire dal frame.

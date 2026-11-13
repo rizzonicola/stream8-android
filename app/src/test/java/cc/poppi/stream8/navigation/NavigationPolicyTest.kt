@@ -230,20 +230,83 @@ class NavigationPolicyTest {
     }
 
     @Test
-    fun `da TMDB i link esterni si aprono nella WebView solo se autorizzati`() {
-        val p = NavigationPolicy()
-        assertTrue(p.onMainFrameCommitted(home))
-        p.openService("https://sito.com/")
-        assertTrue(p.onMainFrameCommitted("https://www.themoviedb.org/movie/1")) // sito.com -> TMDB
+    fun `TMDB apre nuovi servizi e la cascata prosegue in modo ricorsivo`() {
+        val p = onStream8()
+        assertTrue(p.onMainFrameCommitted("https://www.themoviedb.org/movie/1")) // Stream8 -> TMDB
+        assertTrue(p.cascadeEnabled)
 
-        val allowed = p.evaluate(click("https://www.sito.com/watch"))
-        assertEquals(WebAction.LOAD, allowed.web)
-        val blocked = p.evaluate(click("https://sito1.com/"))
-        assertEquals(WebAction.BLOCK, blocked.web)
-        assertTrue(blocked.mayLaunchApp) // l'app va comunque tentata, il fallback web no
-        // TMDB non puo' aprire un nuovo servizio: solo Stream8 puo'
-        val fresh = NavigationPolicy().also { it.onMainFrameCommitted("https://www.themoviedb.org/") }
-        assertEquals(WebAction.BLOCK, fresh.evaluate(click("https://sito.com/")).web)
+        p.openService("https://sito.com/") // TMDB -> A: la cascata e' partita
+        p.openService("https://altro.net/") // A -> B: un servizio puo' aprire un altro dominio
+        p.assertLoads(click("https://www.altro.net/x"))
+        p.openService("https://terzo.org/") // B -> C: e cosi' via, senza limiti di passaggi
+        p.assertLoads(click("https://www.terzo.org/x"))
+    }
+
+    @Test
+    fun `senza TMDB un servizio non puo' aprire nuovi domini`() {
+        val p = onStream8()
+        p.openService("https://sito.com/") // Stream8 -> A, nessun TMDB nella catena
+        assertFalse(p.cascadeEnabled)
+
+        val v = p.evaluate(click("https://altro.net/"))
+        assertEquals(WebAction.BLOCK, v.web)
+        assertEquals(Reason.OUTSIDE_SERVICE, v.reason)
+        p.assertBlocked(popup("https://altro.net/"))
+    }
+
+    @Test
+    fun `TMDB abilita la cascata anche se raggiunto da un servizio`() {
+        val p = onStream8()
+        p.openService("https://sito.com/")
+        assertTrue(p.onMainFrameCommitted("https://www.themoviedb.org/movie/1")) // A -> TMDB
+        assertTrue(p.cascadeEnabled)
+
+        p.openService("https://altro.net/") // TMDB -> B, poi B puo' proseguire
+        p.openService("https://terzo.org/")
+    }
+
+    @Test
+    fun `da TMDB i link esterni si aprono a cascata solo con un click reale`() {
+        val p = NavigationPolicy().also { assertTrue(it.onMainFrameCommitted("https://www.themoviedb.org/")) }
+        p.openService("https://sito.com/") // click reale: nuovo servizio
+        p.assertBlocked(auto("https://altro.net/"))
+        p.assertBlocked(redirect("https://altro.net/"))
+        p.assertLoads(click("https://www.sito.com/watch")) // il dominio corrente resta navigabile
+    }
+
+    @Test
+    fun `tornando a Stream8 la cascata si azzera`() {
+        val p = onStream8()
+        assertTrue(p.onMainFrameCommitted("https://www.themoviedb.org/"))
+        p.openService("https://sito.com/")
+        assertTrue(p.cascadeEnabled)
+
+        assertTrue(p.onMainFrameCommitted(home)) // Indietro fino a Stream8
+        assertFalse(p.cascadeEnabled)
+
+        p.openService("https://altro.net/") // nuova catena senza TMDB
+        p.assertBlocked(click("https://terzo.org/"))
+
+        val q = NavigationPolicy().also { assertTrue(it.onMainFrameCommitted("https://www.themoviedb.org/")) }
+        q.onHomeRequested() // "Ricarica Stream8"
+        assertFalse(q.cascadeEnabled)
+    }
+
+    @Test
+    fun `lo stato salvato ripristina anche la cascata`() {
+        val p = NavigationPolicy().also { assertTrue(it.onMainFrameCommitted("https://www.themoviedb.org/")) }
+        p.openService("https://sito.com/")
+        val saved = p.snapshot()
+
+        val restored = NavigationPolicy()
+        restored.restore(saved, cascade = true)
+        assertTrue(restored.onMainFrameCommitted("https://sito.com/"))
+        assertEquals(WebAction.LOAD_NEW_SERVICE, restored.evaluate(click("https://altro.net/")).web)
+
+        val withoutCascade = NavigationPolicy()
+        withoutCascade.restore(saved)
+        assertTrue(withoutCascade.onMainFrameCommitted("https://sito.com/"))
+        assertEquals(WebAction.BLOCK, withoutCascade.evaluate(click("https://altro.net/")).web)
     }
 
     @Test

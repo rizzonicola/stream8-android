@@ -76,7 +76,10 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         applySystemBarIcons()
 
         // Dopo la morte del processo: stato di navigazione e domini dei servizi già autorizzati.
-        policy.restore(savedInstanceState?.getStringArrayList(KEY_VISITED))
+        policy.restore(
+            savedInstanceState?.getStringArrayList(KEY_VISITED),
+            cascade = savedInstanceState?.getBoolean(KEY_CASCADE, false) ?: false,
+        )
 
         controller = WebController(this, policy, loadAdBlocker(), prefs, this)
         attachNewWebView()
@@ -342,6 +345,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putStringArrayList(KEY_VISITED, policy.snapshot())
+        outState.putBoolean(KEY_CASCADE, policy.cascadeEnabled)
         // Con cronologie molto lunghe lo stato supererebbe il limite delle transazioni Binder: non si salva.
         if (webView.copyBackForwardList().size <= MAX_SAVED_HISTORY) {
             val webState = Bundle()
@@ -392,6 +396,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
     companion object {
         const val EXTRA_RELOAD_HOME = "cc.poppi.stream8.RELOAD_HOME"
         private const val KEY_VISITED = "visited_scopes"
+        private const val KEY_CASCADE = "cascade_enabled"
         private const val KEY_WEB = "web_state"
         private const val MAX_SAVED_HISTORY = 15
         private const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
