@@ -7,7 +7,7 @@ Questo repository è **separato** da [`rizzonicola/stream8`](https://github.com/
 ricostruisce il sito in Kotlin, carica `https://stream8.poppi.cc/`.
 
 > **Stato della verifica:** test unitari e build debug/release firmata eseguiti localmente il 13/11/2026 con JDK 17,
-> Gradle 8.9 e Android SDK 35: tutti verdi. La release GitHub `v0.0.5` è l'ultima verifica end-to-end dei workflow:
+> Gradle 8.9 e Android SDK 35: tutti verdi. La release GitHub `v0.0.6` è l'ultima verifica end-to-end dei workflow:
 > vedi [Stato della verifica](#stato-della-verifica).
 
 ## Cosa fa
@@ -190,7 +190,7 @@ app/src/test/   test unitari JVM (JUnit 4)
 |---|---|
 | Compilazione Gradle/Kotlin/APK | **Eseguita** localmente (Gradle 8.9, JDK 17, Android SDK 35): debug e release firmata OK |
 | Test unitari (64 casi) | **Eseguiti** localmente: tutti PASS |
-| Workflow GitHub Actions | Sintassi YAML valida; esecuzione end-to-end con le release `v0.0.3`, `v0.0.4` e `v0.0.5` |
+| Workflow GitHub Actions | Sintassi YAML valida; esecuzione end-to-end con le release `v0.0.3`, `v0.0.4`, `v0.0.5` e `v0.0.6` |
 | Aggiornamento adblock (OISD) | **Verificato** su Waydroid con l'APK `0.0.5`: 62.336 domini scaricati e applicati; Stream8 carica regolarmente |
 | Fascia superiore e navbar | **Verificata** su Waydroid: fascia `GONE` su Stream8 e `VISIBLE` su TMDB, altezza pari all'inset superiore e nessuno spazio aggiuntivo. L'emulatore di Waydroid non espone un inset superiore maggiore di zero, quindi il riempimento a tema è verificato a livello di gerarchia e layout |
 | `scripts/verify-apks.sh` | **Eseguito** sui 4 APK reali: presenza, zip, firma, applicationId, versionName OK |
