@@ -6,7 +6,7 @@ import java.io.InputStream
 import java.util.Locale
 
 /**
- * Filtro leggero basato su una lista di domini (assets/adblock-domains.txt).
+ * Filtro leggero basato su una lista di domini (assets/adblock-domains.txt e cache aggiornata).
  *
  * Regole di sicurezza, in ordine:
  *  1. Stream8 e TMDB (incluso image.tmdb.org) non vengono mai bloccati, anche se finissero nella lista.
@@ -17,9 +17,16 @@ import java.util.Locale
  * La lista contiene soltanto domini pubblicitari/tracker, non CDN né host di API o video.
  */
 class AdBlocker(domains: Collection<String>) {
-    private val blocked: Set<String> = domains.mapNotNull { normalize(it) }.toHashSet()
+    /** Sostituita in modo atomico dall'aggiornamento in background: mai un insieme a metà. */
+    @Volatile
+    private var blocked: Set<String> = normalize(domains)
 
     val size: Int get() = blocked.size
+
+    /** Applica una lista nuova (cache o download); le richieste in corso vedono la vecchia o la nuova. */
+    fun update(domains: Collection<String>) {
+        blocked = normalize(domains)
+    }
 
     fun shouldBlock(requestHost: String, pageHost: String?): Boolean {
         val host = requestHost.lowercase(Locale.ROOT).trimEnd('.')
@@ -34,6 +41,9 @@ class AdBlocker(domains: Collection<String>) {
             candidate = candidate.substring(dot + 1)
         }
     }
+
+    private fun normalize(domains: Collection<String>): Set<String> =
+        domains.mapNotNull { normalizeDomain(it) }.toHashSet()
 
     private fun isProtected(host: String): Boolean =
         host == PolicyDefaults.STREAM8_HOST || host.endsWith(".${PolicyDefaults.STREAM8_HOST}") ||
@@ -51,19 +61,47 @@ class AdBlocker(domains: Collection<String>) {
     companion object {
         private val VALID = Regex("^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$")
 
-        /** Una voce per riga; `#` inizia un commento; accetta anche il formato hosts (`0.0.0.0 dominio`). */
+        /** Limite di sicurezza per una lista scaricata: evita file enormi o corrotti in memoria. */
+        const val MAX_DOMAINS = 150_000
+
+        /**
+         * Una voce per riga; `#` e `!` iniziano un commento. Accetta il formato hosts (`0.0.0.0 dominio`),
+         * i wildcard di OISD (`*.dominio`) e le regole Adblock di solo dominio (`||dominio^`).
+         * Le regole con percorso, opzioni o cosmetiche vengono ignorate: non sono blocchi dell'intero host.
+         */
         fun parseLine(line: String): String? {
-            val clean = line.substringBefore('#').trim()
-            if (clean.isEmpty()) return null
-            return normalize(clean.split(Regex("\\s+")).last())
+            val clean = line.trim()
+            if (clean.isEmpty() || clean.startsWith("#") || clean.startsWith("!") || clean.startsWith("[")) {
+                return null
+            }
+            if (clean.startsWith("@@") || clean.contains("##") || clean.contains("#@#") ||
+                clean.contains("#?#") || clean.contains("#$#")
+            ) {
+                return null
+            }
+            val withoutComment = clean.substringBefore('#').trim()
+            if (withoutComment.isEmpty()) return null
+            val token = withoutComment.split(Regex("\\s+")).last()
+            if (token.contains('$')) return null // es. ||dominio^$third-party
+            return normalizeDomain(
+                token.removePrefix("||").removeSuffix("^").removePrefix("*."),
+            )
         }
 
-        private fun normalize(raw: String): String? {
+        private fun normalizeDomain(raw: String): String? {
             val d = raw.trim().lowercase(Locale.ROOT).trimEnd('.')
             return d.takeIf { VALID.matches(it) }
         }
 
-        fun fromStream(stream: InputStream): AdBlocker =
-            AdBlocker(stream.bufferedReader().useLines { lines -> lines.mapNotNull { parseLine(it) }.toList() })
+        /**
+         * Legge una lista senza superare [MAX_DOMAINS] voci. Usata sia per l'asset incorporato
+         * sia per la cache scaricata; il chiamante decide se la lista è abbastanza grande.
+         */
+        fun readDomains(stream: InputStream): List<String> =
+            stream.bufferedReader().useLines { lines ->
+                lines.mapNotNull { parseLine(it) }.take(MAX_DOMAINS + 1).toList()
+            }
+
+        fun fromStream(stream: InputStream): AdBlocker = AdBlocker(readDomains(stream))
     }
 }

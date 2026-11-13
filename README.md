@@ -7,7 +7,7 @@ Questo repository è **indipendente** da [`rizzonicola/stream8`](https://github.
 ricostruisce il sito in Kotlin, carica `https://stream8.poppi.cc/`.
 
 > **Stato della verifica:** test unitari e build debug/release firmata eseguiti localmente il 13/11/2026 con JDK 17,
-> Gradle 8.9 e Android SDK 35: tutti verdi. La release GitHub `v0.0.2` è la prima verifica end-to-end dei workflow:
+> Gradle 8.9 e Android SDK 35: tutti verdi. La release GitHub `v0.0.5` è l'ultima verifica end-to-end dei workflow:
 > vedi [Stato della verifica](#stato-della-verifica).
 
 ## Cosa fa
@@ -16,9 +16,9 @@ ricostruisce il sito in Kotlin, carica `https://stream8.poppi.cc/`.
 - Mantiene cookie, Local Storage e sessioni; barra di caricamento discreta; errore di connessione con pulsante **Riprova**.
 - Usa la cache del service worker del sito: la shell si apre subito dalla cache e si aggiorna in background; i dati dinamici restano sempre in rete.
 - Quando da Stream8 si apre un servizio esterno, **solo quel dominio** (con i suoi sottodomini) diventa navigabile; TMDB resta sempre raggiungibile. Quando entra in gioco TMDB la navigazione procede **a cascata** su nuovi domini, ricorsivamente. Dettagli in [docs/NAVIGAZIONE.md](docs/NAVIGAZIONE.md).
-- Può aprire app Android installate (es. un'app di streaming) **solo** da pagine Stream8 e TMDB, **solo** con un tocco reale dell'utente.
+- Può aprire app Android installate (es. un'app di streaming) **solo** da pagine Stream8, TMDB o servizi della cascata TMDB, **solo** con un tocco reale dell'utente.
 - Solo HTTPS, certificati sempre verificati, nessun bridge JavaScript, nessun accesso a file locali, nessun browser esterno.
-- Adblocker leggero a elenco di domini, disattivabile.
+- Adblocker leggero a elenco di domini (OISD Small), aggiornato automaticamente in background, disattivabile.
 - Smartphone, tablet e Android TV (banner, `LEANBACK_LAUNCHER`, touch non obbligatorio, tasto Menu per le impostazioni).
 
 Permessi richiesti: soltanto `INTERNET`. `minSdk` 24 (Android 7.0), `targetSdk` 35.
@@ -140,22 +140,29 @@ La decisione si basa sulla **pagina principale realmente caricata**, mai sul ref
 
 ## Adblocker
 
-Filtro a elenco di domini (`app/src/main/assets/adblock-domains.txt`), attivo di default, disattivabile dalle Impostazioni.
-Blocca solo richieste di **risorse e iframe** il cui host (o dominio padre) è in elenco. Non blocca mai: Stream8, TMDB, richieste
-first-party, né la navigazione principale. L'elenco contiene solo domini pubblicitari/tracker, non CDN, API, autenticazione, immagini o video.
-L'elenco è **statico e incorporato nell'APK**: non è dinamico, non si aggiorna da solo e non contatta servizi esterni; cambia
-solo con una nuova versione dell'app. Per aggiornarlo modifica il file (un dominio per riga, `#` per i commenti; accetta anche
-il formato `hosts`) e ricompila.
+Filtro a elenco di domini, attivo di default, disattivabile dalle Impostazioni. All'avvio usa la lista incorporata
+(`app/src/main/assets/adblock-domains.txt`, 53 domini di fallback) e in background carica l'ultima lista salvata; se ha più
+di 7 giorni scarica **OISD Small** (`https://small.oisd.nl/domainswild`, circa 1,3 MB, oltre 62.000 domini) e la sostituisce
+in modo atomico. Un errore di rete, un timeout o un file non valido lasciano intatta la lista precedente. Il download e il
+parsing avvengono fuori dal thread principale; l'elenco completo occupa pochi MB in memoria.
 
-**Limiti:** è un elenco di partenza minimo e non promette il blocco totale degli annunci; non fa filtri cosmetici né blocca
-annunci serviti dallo stesso dominio del contenuto.
+Blocca solo richieste di **risorse e iframe** il cui host (o dominio padre) è in elenco. Non blocca mai: Stream8, TMDB,
+richieste first-party, né la navigazione principale. La lista contiene solo domini pubblicitari/tracker: non fa filtri
+cosmetici, non blocca regole per percorso e non tocca CDN, API, autenticazione, immagini o video.
+
+**Perché OISD Small e non EasyList:** il filtro dell'app lavora per host, non per URL. EasyList è pensata per filtri
+cosmetici e per percorso (molto più pesante e con regole che, ridotte al solo dominio, rischierebbero di bloccare player e
+CDN). OISD Small è invece una lista di soli domini, aggiornata ogni giorno, pensata per bloccare pubblicità e tracker con
+pochi falsi positivi. Licenza OISD: GPL-3.0, © Stephan van Ruth.
+
+**Limiti:** non promette il blocco totale degli annunci; non blocca annunci serviti dallo stesso dominio del contenuto.
 
 ## Struttura
 
 ```
 app/src/main/java/cc/poppi/stream8/
   navigation/   NavigationPolicy, UrlParser, DomainScope, IntentUrl, LoadError   (logica pura, testata)
-  adblock/      AdBlocker                                                          (logica pura, testata)
+  adblock/      AdBlocker, AdBlockListUpdater (logica pura + aggiornamento OISD)      (testata)
   web/          WebController (WebView + 3 livelli di difesa), ExternalAppLauncher
   MainActivity, SettingsActivity, Prefs
 app/src/test/   test unitari JVM (JUnit 4)
@@ -181,8 +188,9 @@ app/src/test/   test unitari JVM (JUnit 4)
 | Verifica | Esito |
 |---|---|
 | Compilazione Gradle/Kotlin/APK | **Eseguita** localmente (Gradle 8.9, JDK 17, Android SDK 35): debug e release firmata OK |
-| Test unitari (50 casi) | **Eseguiti** localmente: tutti PASS |
-| Workflow GitHub Actions | Sintassi YAML valida; prima esecuzione end-to-end con la release `v0.0.2` |
+| Test unitari (64 casi) | **Eseguiti** localmente: tutti PASS |
+| Workflow GitHub Actions | Sintassi YAML valida; esecuzione end-to-end con le release `v0.0.3`, `v0.0.4` e `v0.0.5` |
+| Aggiornamento adblock (OISD) | **Verificato** su Waydroid con l'APK `0.0.5`: 62.336 domini scaricati e applicati; Stream8 carica regolarmente |
 | `scripts/verify-apks.sh` | **Eseguito** sui 4 APK reali: presenza, zip, firma, applicationId, versionName OK |
 | XML e risorse Android | Compilati da AAPT2; icona adattiva e fallback PNG verificati nell'APK |
 | APK firmati | **Sì**, localmente con la chiave di release; certificato `CN=Scripta` |

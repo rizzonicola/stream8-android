@@ -44,11 +44,36 @@ class AdBlockerTest {
     @Test
     fun `parseLine gestisce commenti, righe vuote e formato hosts`() {
         assertNull(AdBlocker.parseLine("# commento"))
+        assertNull(AdBlocker.parseLine("! commento EasyList"))
+        assertNull(AdBlocker.parseLine("[Adblock Plus 2.0]"))
         assertNull(AdBlocker.parseLine("   "))
         assertNull(AdBlocker.parseLine("nodots"))
         assertNull(AdBlocker.parseLine("not a domain!"))
+        assertNull(AdBlocker.parseLine("https://ads.com/banner.js"))
         assertEquals("ads.com", AdBlocker.parseLine("ads.com # tracker"))
         assertEquals("ads.com", AdBlocker.parseLine("0.0.0.0 ADS.com"))
+    }
+
+    @Test
+    fun `parseLine accetta wildcard OISD e regole di solo dominio`() {
+        assertEquals("ads.com", AdBlocker.parseLine("*.ads.com"))
+        assertEquals("ads.com", AdBlocker.parseLine("||ads.com^"))
+        assertEquals("ads.com", AdBlocker.parseLine("  *.ADS.com.  "))
+        // Regole con percorso, opzioni o cosmetiche non sono blocchi dell'intero host.
+        assertNull(AdBlocker.parseLine("||ads.com^\$third-party"))
+        assertNull(AdBlocker.parseLine("@@||ads.com^"))
+        assertNull(AdBlocker.parseLine("ads.com##.banner"))
+    }
+
+    @Test
+    fun `update sostituisce la lista senza riavviare l'app`() {
+        val b = AdBlocker(listOf("vecchio.com"))
+        assertTrue(b.shouldBlock("vecchio.com", page))
+        b.update(listOf("nuovo.com", "altro.net"))
+        assertEquals(2, b.size)
+        assertFalse(b.shouldBlock("vecchio.com", page))
+        assertTrue(b.shouldBlock("sub.nuovo.com", page))
+        assertTrue(b.shouldBlock("altro.net", page))
     }
 
     @Test

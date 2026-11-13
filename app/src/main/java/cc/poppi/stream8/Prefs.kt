@@ -16,8 +16,26 @@ class Prefs(context: Context) {
         get() = prefs.getBoolean(KEY_FIRST_RUN, false)
         set(value) = prefs.edit().putBoolean(KEY_FIRST_RUN, value).apply()
 
+    /** Ultimo aggiornamento riuscito della lista adblock (0 = mai). */
+    var adblockLastUpdate: Long
+        get() = prefs.getLong(KEY_ADBLOCK_UPDATE, 0L)
+        set(value) = prefs.edit().putLong(KEY_ADBLOCK_UPDATE, value).apply()
+
+    /** Ultimo tentativo di aggiornamento, riuscito o no: evita retry a raffica. */
+    var adblockLastAttempt: Long
+        get() = prefs.getLong(KEY_ADBLOCK_ATTEMPT, 0L)
+        set(value) = prefs.edit().putLong(KEY_ADBLOCK_ATTEMPT, value).apply()
+
+    /** ETag dell'ultima lista scaricata, per non riscaricarla se non è cambiata. */
+    var adblockEtag: String?
+        get() = prefs.getString(KEY_ADBLOCK_ETAG, null)
+        set(value) = prefs.edit().putString(KEY_ADBLOCK_ETAG, value).apply()
+
     private companion object {
         const val KEY_ADBLOCK = "adblock_enabled"
         const val KEY_FIRST_RUN = "first_run_done"
+        const val KEY_ADBLOCK_UPDATE = "adblock_last_update"
+        const val KEY_ADBLOCK_ATTEMPT = "adblock_last_attempt"
+        const val KEY_ADBLOCK_ETAG = "adblock_etag"
     }
 }

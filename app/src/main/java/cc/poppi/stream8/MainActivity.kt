@@ -29,6 +29,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import cc.poppi.stream8.adblock.AdBlocker
+import cc.poppi.stream8.adblock.AdBlockListUpdater
 import cc.poppi.stream8.navigation.ImportLink
 import cc.poppi.stream8.navigation.LoadErrorKind
 import cc.poppi.stream8.navigation.NavigationPolicy
@@ -86,7 +87,9 @@ class MainActivity : ComponentActivity(), WebController.Ui {
             cascade = savedInstanceState?.getBoolean(KEY_CASCADE, false) ?: false,
         )
 
-        controller = WebController(this, policy, loadAdBlocker(), prefs, this)
+        val adBlocker = loadAdBlocker()
+        controller = WebController(this, policy, adBlocker, prefs, this)
+        if (adBlocker != null) AdBlockListUpdater(this, prefs, adBlocker).start()
         attachNewWebView()
         onBackPressedDispatcher.addCallback(this, backCallback)
 
@@ -142,7 +145,13 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         ViewCompat.setOnApplyWindowInsetsListener(webLayer) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
+            // Il top non si aggiunge qui: la pagina usa viewport-fit=cover e
+            // env(safe-area-inset-top) per la navbar, quindi lo stesso spazio
+            // verrebbe riservato due volte (padding nativo + CSS) e la barra
+            // resterebbe troppo in basso. Le pagine senza viewport-fit=cover
+            // vengono già riportate da Chromium fuori dall'intaglio. In basso
+            // resta il padding nativo per barra di navigazione e tastiera.
+            v.setPadding(bars.left, 0, bars.right, maxOf(bars.bottom, ime.bottom))
             insets
         }
     }
