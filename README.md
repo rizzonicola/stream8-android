@@ -6,9 +6,9 @@ App Android nativa per [Stream8](https://stream8.poppi.cc/): un involucro legger
 Questo repository è **separato** da [`rizzonicola/stream8`](https://github.com/rizzonicola/stream8), dello stesso autore: l'app non
 ricostruisce il sito in Kotlin, carica `https://stream8.poppi.cc/`.
 
-> **Stato della verifica:** test unitari e build debug/release firmata eseguiti localmente il 13/11/2026 con JDK 17,
-> Gradle 8.10.2 e Android SDK 35: tutti verdi. La release GitHub `v0.0.7` è l'ultima verifica end-to-end dei workflow:
-> vedi [Stato della verifica](#stato-della-verifica).
+> **Stato della verifica:** test unitari, lint e build debug/release (R8) eseguiti localmente il 14/11/2026 con JDK 17
+> e Android SDK 35: tutti verdi; la release firmata è prodotta e verificata dal workflow. La release GitHub `v0.0.8` è
+> l'ultima verifica end-to-end dei workflow: vedi [Stato della verifica](#stato-della-verifica).
 
 ## Cosa fa
 
@@ -204,12 +204,13 @@ distribuito con la stessa licenza e fonte dell'icona e del banner dell'app.
 
 | Verifica | Esito |
 |---|---|
-| Compilazione Gradle/Kotlin/APK | **Eseguita** localmente (Gradle 8.10.2, JDK 17, Android SDK 35): debug e release firmata OK |
-| Test unitari (67 casi) | **Eseguiti** localmente: tutti PASS |
-| Workflow GitHub Actions | Sintassi YAML valida; esecuzione end-to-end con le release `v0.0.3`, `v0.0.4`, `v0.0.5`, `v0.0.6` e `v0.0.7` |
+| Compilazione Gradle/Kotlin/APK | **Eseguita** localmente (Gradle 8.9, JDK 17, Android SDK 35): debug e release R8 OK; lint verde con 13 warning preesistenti. La release firmata è prodotta dal workflow |
+| Test unitari (74 casi) | **Eseguiti** localmente: tutti PASS |
+| Workflow GitHub Actions | Sintassi YAML valida; esecuzione end-to-end con le release `v0.0.3`, `v0.0.4`, `v0.0.5`, `v0.0.6`, `v0.0.7` e `v0.0.8` |
+| Conferma apertura app fuori cascata | **Verificata** su Waydroid con l'APK debug: dialogo per link HTTPS cross-domain e deep link, annullamento senza navigazione, apertura solo dopo conferma, nessun dialogo per i link dello stesso servizio |
 | Aggiornamento adblock (OISD) | **Verificato** su Waydroid con l'APK `0.0.5`: 62.336 domini scaricati e applicati; Stream8 carica regolarmente |
 | Fascia superiore e navbar | **Verificata** su Waydroid con inset superiore forzato a 60 px: su TMDB la fascia occupa `0..60` e la WebView inizia a `y=60`, senza coprire il contenuto; su Stream8 la fascia è `GONE` e la WebView parte da `0`. L'emulatore non espone un inset reale maggiore di zero, quindi il test usa un inset temporaneo |
 | Lingua dell'interfaccia nativa | **Verificata** su Waydroid: con il sito in inglese, francese e italiano, menu, Impostazioni, regole e Info e licenze cambiano lingua; con **Automatico** seguono la lingua di sistema (fallback inglese), come il sito |
 | `scripts/verify-apks.sh` | **Eseguito** sugli APK reali: presenza, zip, firma, applicationId, versionName OK |
 | XML e risorse Android | Compilati da AAPT2; icona adattiva e fallback PNG verificati nell'APK |
-| APK firmati | **Sì**, localmente con la chiave di release; certificato `CN=Scripta` |
+| APK firmati | **Sì**, dal workflow con la chiave di release; certificato `CN=Scripta` |
