@@ -1,17 +1,18 @@
 package cc.poppi.stream8.navigation
 
-import java.util.Locale
-
-object PolicyDefaults {
-    const val HOME_URL = "https://stream8.poppi.cc/"
-    const val STREAM8_HOST = "stream8.poppi.cc"
-    const val TMDB_DOMAIN = "themoviedb.org"
-
-    /** Solo risorse (immagini): non è una destinazione di navigazione. */
-    const val TMDB_IMAGE_HOST = "image.tmdb.org"
-}
-
 enum class NavKind { MAIN_FRAME, POPUP }
+
+/** Come il livello Android deve gestire l'apertura di un'app esterna per una richiesta. */
+enum class AppLaunch {
+    /** Nessun tentativo di apertura. */
+    NONE,
+
+    /** Apertura immediata: origine fidata (Stream8, TMDB o servizio della cascata TMDB). */
+    DIRECT,
+
+    /** Apertura solo dopo una conferma esplicita: servizio fuori dalla cascata TMDB. */
+    CONFIRM,
+}
 
 enum class WebAction {
     BLOCK,
@@ -44,16 +45,19 @@ data class NavRequest(
 
 /**
  * Esito della valutazione.
- * @param mayLaunchApp se true il livello Android può PROVARE ad aprire un'app esterna per questo URL
- *   (solo da Stream8/TMDB o da un servizio della cascata TMDB, con gesto reale e mai da redirect).
- *   Se non esiste un'app compatibile si applica [web].
+ * @param appLaunch se [AppLaunch.DIRECT] il livello Android può aprire subito un'app esterna;
+ *   se [AppLaunch.CONFIRM] deve prima chiedere conferma all'utente; se [AppLaunch.NONE] non deve
+ *   tentare alcuna apertura. In caso di mancata apertura si applica [web].
  */
 data class Verdict(
     val web: WebAction,
-    val mayLaunchApp: Boolean,
+    val appLaunch: AppLaunch,
     val reason: Reason,
     internal val newService: DomainScope? = null,
-)
+) {
+    val mayLaunchApp: Boolean get() = appLaunch == AppLaunch.DIRECT
+    val confirmAppLaunch: Boolean get() = appLaunch == AppLaunch.CONFIRM
+}
 
 /**
  * Policy di navigazione. Pura logica JVM, nessuna dipendenza Android: è il punto unico di decisione
@@ -65,13 +69,16 @@ data class Verdict(
  * Scrittura solo dal thread UI; lettura (shouldInterceptRequest) da qualsiasi thread: lo stato è
  * immutabile e sostituito atomicamente.
  */
-class NavigationPolicy(
-    private val stream8Host: String = PolicyDefaults.STREAM8_HOST,
-    private val tmdbDomain: String = PolicyDefaults.TMDB_DOMAIN,
-) {
-    private enum class Origin { NONE, STREAM8, TMDB, SERVICE }
+class NavigationPolicy {
+    private enum class Site { STREAM8, TMDB, OTHER }
 
-    private class Context(val origin: Origin, val service: DomainScope?)
+    /** Da dove parte la richiesta; [Service.scope] è il dominio autorizzato, se noto. */
+    private sealed interface Origin {
+        data object None : Origin
+        data object Stream8 : Origin
+        data class Tmdb(val lastService: DomainScope?) : Origin
+        data class Service(val scope: DomainScope?) : Origin
+    }
 
     private data class State(
         /** Host della pagina principale attualmente caricata. */
@@ -98,60 +105,74 @@ class NavigationPolicy(
         val parsed = UrlParser.parse(request.url) ?: return deny(Reason.MALFORMED_URL)
         if (request.kind == NavKind.POPUP && !request.userGesture) return deny(Reason.POPUP_WITHOUT_GESTURE)
 
-        val ctx = contextOf(state, request.redirect)
-        // Le app si possono aprire da Stream8/TMDB e, nella cascata avviata da TMDB,
-        // anche dai servizi raggiunti (es. Prime Video). Mai senza cascata.
-        val trusted = ctx.origin == Origin.STREAM8 || ctx.origin == Origin.TMDB ||
-            (ctx.origin == Origin.SERVICE && state.cascade)
+        val origin = originOf(state, request.redirect)
+        // Le app si aprono direttamente da Stream8/TMDB e, nella cascata avviata da TMDB,
+        // anche dai servizi raggiunti. Fuori dalla cascata un servizio può solo chiedere
+        // conferma: è la valvola per provider non elencati e server Jellyfin.
+        val trusted = when (origin) {
+            Origin.None -> false
+            Origin.Stream8, is Origin.Tmdb -> true
+            is Origin.Service -> state.cascade
+        }
         // Solo con un click reale: non automatismi, non redirect.
-        val mayLaunch = trusted && request.userGesture && !request.redirect
+        val direct = trusted && request.userGesture && !request.redirect
+        val confirm = origin is Origin.Service && !state.cascade &&
+            request.userGesture && !request.redirect
 
         when (parsed.scheme) {
             "https" -> Unit
             "http" -> return deny(Reason.INSECURE_SCHEME)
-            in BLOCKED_SCHEMES -> return deny(Reason.FORBIDDEN_SCHEME)
+            in UrlSyntax.BLOCKED_SCHEMES -> return deny(Reason.FORBIDDEN_SCHEME)
             else -> return when { // intent: e deep link personalizzati
-                mayLaunch -> Verdict(WebAction.BLOCK, true, Reason.EXTERNAL_APP)
+                direct -> Verdict(WebAction.BLOCK, AppLaunch.DIRECT, Reason.EXTERNAL_APP)
+                confirm -> Verdict(WebAction.BLOCK, AppLaunch.CONFIRM, Reason.EXTERNAL_APP)
                 trusted -> deny(Reason.NO_USER_GESTURE)
                 else -> deny(Reason.APP_LAUNCH_FORBIDDEN)
             }
         }
 
         val host = parsed.host ?: return deny(Reason.MALFORMED_URL)
-        val toStream8 = hostMatches(host, stream8Host)
-        val toTmdb = hostMatches(host, tmdbDomain)
+        val site = siteOf(host)
 
-        return when (ctx.origin) {
-            Origin.NONE ->
-                if (toStream8 || toTmdb) allow(Reason.SAME_SITE) else deny(Reason.NO_ORIGIN)
+        return when (origin) {
+            Origin.None ->
+                if (site == Site.STREAM8 || site == Site.TMDB) allow(Reason.SAME_SITE) else deny(Reason.NO_ORIGIN)
 
-            Origin.SERVICE -> when {
-                toStream8 -> deny(Reason.SERVICE_CANNOT_LEAVE)
-                toTmdb -> allow(Reason.TMDB)
+            is Origin.Service -> when {
+                site == Site.STREAM8 -> deny(Reason.SERVICE_CANNOT_LEAVE)
+                site == Site.TMDB -> allow(Reason.TMDB)
                 // Nella cascata anche i link https dello stesso servizio possono aprire la sua app.
-                ctx.service?.contains(host) == true -> Verdict(WebAction.LOAD, mayLaunch, Reason.SAME_SERVICE)
+                origin.scope?.contains(host) == true ->
+                    Verdict(WebAction.LOAD, if (direct) AppLaunch.DIRECT else AppLaunch.NONE, Reason.SAME_SERVICE)
+                // Fuori dalla cascata un nuovo dominio resta chiuso nella WebView, ma un click
+                // reale può chiedere conferma per aprire l'app che gestisce quel link (provider
+                // non elencati, Jellyfin, App Link di app installate).
+                !state.cascade -> when {
+                    !request.userGesture || request.redirect -> deny(Reason.OUTSIDE_SERVICE)
+                    else -> confirmNewService(host)
+                }
                 // Se TMDB e' gia' nella catena, i servizi possono aprirne altri con un click reale
                 // o tramite i redirect della catena (es. JustWatch -> Prime Video).
-                !state.cascade -> deny(Reason.OUTSIDE_SERVICE)
                 !request.userGesture && !request.redirect -> deny(Reason.NO_USER_GESTURE)
-                else -> openNewService(host, mayLaunch)
+                else -> openNewService(host, if (direct) AppLaunch.DIRECT else AppLaunch.NONE)
             }
 
-            Origin.STREAM8 -> when {
-                toStream8 -> allow(Reason.SAME_SITE)
-                toTmdb -> allow(Reason.TMDB)
+            Origin.Stream8 -> when {
+                site == Site.STREAM8 -> allow(Reason.SAME_SITE)
+                site == Site.TMDB -> allow(Reason.TMDB)
                 !request.userGesture || request.redirect -> deny(Reason.NO_USER_GESTURE)
-                else -> openNewService(host, mayLaunch)
+                else -> openNewService(host, if (direct) AppLaunch.DIRECT else AppLaunch.NONE)
             }
 
-            Origin.TMDB -> when {
-                toTmdb -> allow(Reason.TMDB)
-                toStream8 -> allow(Reason.SAME_SITE)
-                ctx.service?.contains(host) == true -> Verdict(WebAction.LOAD, mayLaunch, Reason.SAME_SERVICE)
+            is Origin.Tmdb -> when {
+                site == Site.TMDB -> allow(Reason.TMDB)
+                site == Site.STREAM8 -> allow(Reason.SAME_SITE)
+                origin.lastService?.contains(host) == true ->
+                    Verdict(WebAction.LOAD, if (direct) AppLaunch.DIRECT else AppLaunch.NONE, Reason.SAME_SERVICE)
                 // TMDB e' l'origine della cascata: puo' aprire nuovi servizi con un click reale
                 // o tramite un redirect del server (es. provider -> JustWatch), e questi altri ancora.
                 !request.userGesture && !request.redirect -> deny(Reason.NO_USER_GESTURE)
-                else -> openNewService(host, mayLaunch)
+                else -> openNewService(host, if (direct) AppLaunch.DIRECT else AppLaunch.NONE)
             }
         }
     }
@@ -175,14 +196,14 @@ class NavigationPolicy(
         if (parsed.scheme != "https") return false
         val host = parsed.host ?: return false
         val s = state
-        when {
-            hostMatches(host, stream8Host) ->
+        when (siteOf(host)) {
+            Site.STREAM8 ->
                 // Si torna alla home: la catena ricomincia, TMDB non e' piu' "gia' visto".
                 state = s.copy(currentHost = host, lastService = null, pending = null, cascade = false)
-            hostMatches(host, tmdbDomain) ->
+            Site.TMDB ->
                 // Da qui in poi ogni pagina puo' aprire nuovi domini, ricorsivamente.
                 state = s.copy(currentHost = host, pending = null, cascade = true)
-            else -> {
+            Site.OTHER -> {
                 val scope = DomainScope.of(host) ?: return false
                 // In cascata un redirect puo' portare a un dominio non ancora registrato
                 // (catene JustWatch/Prime Video): il caricamento e' gia' stato autorizzato
@@ -211,11 +232,12 @@ class NavigationPolicy(
 
     // ---------------------------------------------------------------- controlli di sicurezza
 
-    fun isHostPermitted(host: String): Boolean {
-        val h = host.lowercase(Locale.ROOT)
-        if (hostMatches(h, stream8Host) || hostMatches(h, tmdbDomain)) return true
-        val scope = DomainScope.of(h) ?: return false
-        return scope.domain in state.visited
+    fun isHostPermitted(host: String): Boolean = when (siteOf(host)) {
+        Site.STREAM8, Site.TMDB -> true
+        Site.OTHER -> {
+            val scope = DomainScope.of(host) ?: return false
+            scope.domain in state.visited
+        }
     }
 
     /** Rete di sicurezza per le richieste del frame principale non passate da shouldOverrideUrlLoading (es. POST). */
@@ -251,33 +273,39 @@ class NavigationPolicy(
 
     // ---------------------------------------------------------------- interni
 
-    private fun contextOf(s: State, redirect: Boolean): Context {
-        if (redirect && s.pending != null) return Context(Origin.SERVICE, s.pending)
-        val host = s.currentHost ?: return Context(Origin.NONE, null)
-        return when {
-            hostMatches(host, stream8Host) -> Context(Origin.STREAM8, null)
-            hostMatches(host, tmdbDomain) -> Context(Origin.TMDB, s.lastService)
-            else -> Context(Origin.SERVICE, DomainScope.of(host) ?: s.lastService)
+    private fun siteOf(host: String): Site = when {
+        PolicyDefaults.isStream8(host) -> Site.STREAM8
+        PolicyDefaults.isTmdb(host) -> Site.TMDB
+        else -> Site.OTHER
+    }
+
+    private fun originOf(s: State, redirect: Boolean): Origin {
+        if (redirect && s.pending != null) return Origin.Service(s.pending)
+        val host = s.currentHost ?: return Origin.None
+        return when (siteOf(host)) {
+            Site.STREAM8 -> Origin.Stream8
+            Site.TMDB -> Origin.Tmdb(s.lastService)
+            Site.OTHER -> Origin.Service(DomainScope.of(host) ?: s.lastService)
         }
     }
 
-    private fun openNewService(host: String, mayLaunch: Boolean): Verdict {
+    private fun openNewService(host: String, appLaunch: AppLaunch): Verdict {
         // IP, nomi senza suffisso noto (localhost) e suffissi pubblici (co.uk) non sono servizi validi.
         val scope = DomainScope.of(host) ?: return deny(Reason.UNSUPPORTED_HOST)
-        return Verdict(WebAction.LOAD_NEW_SERVICE, mayLaunch, Reason.NEW_SERVICE, scope)
+        return Verdict(WebAction.LOAD_NEW_SERVICE, appLaunch, Reason.NEW_SERVICE, scope)
     }
 
-    private fun allow(reason: Reason) = Verdict(WebAction.LOAD, false, reason)
-    private fun deny(reason: Reason) = Verdict(WebAction.BLOCK, false, reason)
-
-    private companion object {
-        val BLOCKED_SCHEMES = setOf(
-            // schemi pericolosi o non applicativi
-            "javascript", "data", "file", "content", "blob", "about", "view-source", "filesystem", "ftp", "ws", "wss",
-            // deep link verso browser esterni: l'app non deve mai delegare la navigazione a un browser
-            "googlechrome", "googlechromes", "firefox", "firefox-focus", "firefox-klar",
-            "microsoft-edge", "microsoft-edge-http", "microsoft-edge-https",
-            "opera-http", "opera-https", "brave",
-        )
+    /**
+     * Fuori dalla cascata la WebView non può aprire un nuovo dominio, ma un click reale può
+     * chiedere conferma per aprire l'app esterna che gestisce il link. La destinazione deve
+     * comunque essere un servizio valido: IP, localhost e suffissi pubblici non possono
+     * diventare un invito ad aprire un'app.
+     */
+    private fun confirmNewService(host: String): Verdict {
+        if (DomainScope.of(host) == null) return deny(Reason.UNSUPPORTED_HOST)
+        return Verdict(WebAction.BLOCK, AppLaunch.CONFIRM, Reason.EXTERNAL_APP)
     }
+
+    private fun allow(reason: Reason) = Verdict(WebAction.LOAD, AppLaunch.NONE, reason)
+    private fun deny(reason: Reason) = Verdict(WebAction.BLOCK, AppLaunch.NONE, reason)
 }

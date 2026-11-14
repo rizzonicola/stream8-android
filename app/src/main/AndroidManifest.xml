@@ -12,6 +12,16 @@
         android:name="android.software.leanback"
         android:required="false" />
 
+    <!-- Android 11+: rende visibili i browser per riconoscerli e non aprirli mai.
+         Deve corrispondere al probe di ExternalAppLauncher.browserPackages(). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="false"
         android:banner="@drawable/tv_banner"

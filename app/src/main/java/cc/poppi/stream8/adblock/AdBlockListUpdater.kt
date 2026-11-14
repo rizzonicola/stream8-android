@@ -3,7 +3,6 @@ package cc.poppi.stream8.adblock
 import android.content.Context
 import android.util.Log
 import cc.poppi.stream8.BuildConfig
-import cc.poppi.stream8.Prefs
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
@@ -27,10 +26,10 @@ import java.util.concurrent.TimeUnit
  */
 class AdBlockListUpdater(
     context: Context,
-    private val prefs: Prefs,
+    private val settings: AdBlockSettings,
     private val blocker: AdBlocker,
 ) {
-    private val cacheFile = File(context.applicationContext.filesDir, CACHE_FILE)
+    private val cacheFile = File(context.applicationContext.filesDir, AdBlocker.LIST_FILE)
 
     fun start() {
         Thread({ run() }, "adblock-list").apply { isDaemon = true }.start()
@@ -38,11 +37,11 @@ class AdBlockListUpdater(
 
     private fun run() {
         loadCached()
-        if (!prefs.adblockEnabled) return
+        if (!settings.enabled) return
         val now = System.currentTimeMillis()
-        if (!AdBlockSchedule.needsRefresh(now, prefs.adblockLastUpdate, prefs.adblockLastAttempt)) return
+        if (!AdBlockSchedule.needsRefresh(now, settings.lastUpdate, settings.lastAttempt)) return
         // Dopo un errore non si riprova a ogni avvio: evita download inutili su rete assente.
-        prefs.adblockLastAttempt = now
+        settings.lastAttempt = now
         download()
     }
 
@@ -66,12 +65,12 @@ class AdBlockListUpdater(
                 instanceFollowRedirects = true
                 setRequestProperty("User-Agent", "Stream8/${BuildConfig.VERSION_NAME}")
                 setRequestProperty("Accept", "text/plain")
-                prefs.adblockEtag?.let { setRequestProperty("If-None-Match", it) }
+                settings.etag?.let { setRequestProperty("If-None-Match", it) }
             }
             when (val code = connection.responseCode) {
                 HttpURLConnection.HTTP_NOT_MODIFIED -> {
                     // La lista sul server non è cambiata: basta rinnovare la scadenza.
-                    prefs.adblockLastUpdate = System.currentTimeMillis()
+                    settings.lastUpdate = System.currentTimeMillis()
                     return
                 }
                 HttpURLConnection.HTTP_OK -> Unit
@@ -87,8 +86,8 @@ class AdBlockListUpdater(
             if (domains.size < MIN_DOMAINS || domains.size > AdBlocker.MAX_DOMAINS) return
             if (!writeAtomically(domains)) return
             blocker.update(domains)
-            prefs.adblockLastUpdate = System.currentTimeMillis()
-            prefs.adblockEtag = connection.getHeaderField("ETag")
+            settings.lastUpdate = System.currentTimeMillis()
+            settings.etag = connection.getHeaderField("ETag")
             Log.i(TAG, "Lista adblock aggiornata: ${domains.size} domini")
         } catch (e: IOException) {
             Log.w(TAG, "Aggiornamento lista adblock non riuscito", e)
@@ -116,7 +115,7 @@ class AdBlockListUpdater(
 
     /** Scrive prima un file temporaneo e poi lo rinomina: la cache non resta mai troncata. */
     private fun writeAtomically(domains: List<String>): Boolean {
-        val temp = File(cacheFile.parentFile, "$CACHE_FILE.tmp")
+        val temp = File(cacheFile.parentFile, "${AdBlocker.LIST_FILE}.tmp")
         return try {
             temp.bufferedWriter().use { writer ->
                 writer.write("# OISD Small — https://small.oisd.nl/domainswild\n")
@@ -142,7 +141,6 @@ class AdBlockListUpdater(
     private companion object {
         const val TAG = "AdBlock"
         const val LIST_URL = "https://small.oisd.nl/domainswild"
-        const val CACHE_FILE = "adblock-domains.txt"
         const val CONNECT_TIMEOUT_MS = 15_000
         const val READ_TIMEOUT_MS = 30_000
         const val MAX_BYTES = 8 * 1024 * 1024
@@ -152,8 +150,8 @@ class AdBlockListUpdater(
 
 /** Cadenza dell'aggiornamento, isolata per poterla verificare senza Android. */
 internal object AdBlockSchedule {
-    val refreshMs: Long = TimeUnit.DAYS.toMillis(7)
-    val retryMs: Long = TimeUnit.HOURS.toMillis(6)
+    private val refreshMs: Long = TimeUnit.DAYS.toMillis(AdBlockSettings.REFRESH_DAYS.toLong())
+    private val retryMs: Long = TimeUnit.HOURS.toMillis(6)
 
     fun needsRefresh(now: Long, lastUpdate: Long, lastAttempt: Long): Boolean =
         now - lastUpdate >= refreshMs && now - lastAttempt >= retryMs

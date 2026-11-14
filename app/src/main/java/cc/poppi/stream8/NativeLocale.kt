@@ -14,6 +14,8 @@ import java.util.Locale
  */
 object NativeLocale {
     private const val FALLBACK = "en"
+
+    // Aggiungere una lingua qui e in app/src/main/res/values-<lang>.
     private val SUPPORTED = setOf("it", "en", "fr")
 
     /** Restituisce `it`, `en` o `fr`; null per valori assenti o non supportati. */

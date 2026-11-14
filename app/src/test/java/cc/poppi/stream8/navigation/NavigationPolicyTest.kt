@@ -206,7 +206,11 @@ class NavigationPolicyTest {
             "https://www.netflix.com/title/1",
             "intent://www.netflix.com/title/1#Intent;scheme=https;package=com.netflix.mediaclient;end",
             "netflix://title/1",
-        ).forEach { assertTrue(it, p.evaluate(click(it)).mayLaunchApp) }
+        ).forEach {
+            val v = p.evaluate(click(it))
+            assertTrue(it, v.mayLaunchApp)
+            assertFalse(it, v.confirmAppLaunch)
+        }
     }
 
     @Test
@@ -226,7 +230,11 @@ class NavigationPolicyTest {
             "https://www.netflix.com/title/1",
             "intent://www.youtube.com/watch#Intent;scheme=https;package=com.google.android.youtube;end",
             "spotify://track/1",
-        ).forEach { assertTrue(it, p.evaluate(click(it)).mayLaunchApp) }
+        ).forEach {
+            val v = p.evaluate(click(it))
+            assertTrue(it, v.mayLaunchApp)
+            assertFalse(it, v.confirmAppLaunch)
+        }
     }
 
     @Test
@@ -243,15 +251,18 @@ class NavigationPolicyTest {
     }
 
     @Test
-    fun `senza TMDB un servizio non puo' aprire nuovi domini`() {
+    fun `senza TMDB un servizio non apre nuovi domini e chiede conferma per le app`() {
         val p = onStream8()
         p.openService("https://sito.com/") // Stream8 -> A, nessun TMDB nella catena
         assertFalse(p.cascadeEnabled)
 
         val v = p.evaluate(click("https://altro.net/"))
         assertEquals(WebAction.BLOCK, v.web)
-        assertEquals(Reason.OUTSIDE_SERVICE, v.reason)
-        p.assertBlocked(popup("https://altro.net/"))
+        assertTrue(v.confirmAppLaunch)
+        assertEquals(Reason.EXTERNAL_APP, v.reason)
+        val popup = p.evaluate(popup("https://altro.net/"))
+        assertEquals(WebAction.BLOCK, popup.web)
+        assertTrue(popup.confirmAppLaunch)
     }
 
     @Test
@@ -338,9 +349,10 @@ class NavigationPolicyTest {
     }
 
     @Test
-    fun `senza cascata un servizio esterno non puo' avviare app`() {
+    fun `senza cascata un servizio esterno chiede conferma prima di aprire un'app`() {
         val p = onStream8()
         p.openService("https://sito.com/")
+        // Link esterni e schemi non web: la WebView resta bloccata, l'app si apre solo dopo conferma.
         listOf(
             "https://www.netflix.com/title/1",
             "intent://www.netflix.com/title/1#Intent;scheme=https;package=com.netflix.mediaclient;end",
@@ -351,11 +363,46 @@ class NavigationPolicyTest {
         ).forEach {
             val v = p.evaluate(click(it))
             assertFalse(it, v.mayLaunchApp)
+            assertTrue(it, v.confirmAppLaunch)
+            assertEquals(it, WebAction.BLOCK, v.web)
+            assertEquals(it, Reason.EXTERNAL_APP, v.reason)
+        }
+        // TMDB e il dominio del servizio restano navigazioni web: nessuna app, nessuna conferma.
+        listOf("https://www.themoviedb.org/x", "https://www.sito.com/x").forEach {
+            val v = p.evaluate(click(it))
+            assertFalse(it, v.mayLaunchApp)
+            assertFalse(it, v.confirmAppLaunch)
+            assertEquals(it, WebAction.LOAD, v.web)
+        }
+    }
+
+    @Test
+    fun `senza cascata la conferma non vale per automatismi o redirect`() {
+        val p = onStream8()
+        p.openService("https://sito.com/")
+        listOf(
+            auto("https://www.netflix.com/title/1"),
+            redirect("https://www.netflix.com/title/1"),
+            auto("netflix://title/1"),
+            redirect("netflix://title/1"),
+        ).forEach {
+            val v = p.evaluate(it)
+            assertFalse(it.url, v.mayLaunchApp)
+            assertFalse(it.url, v.confirmAppLaunch)
+            assertEquals(it.url, WebAction.BLOCK, v.web)
+        }
+    }
+
+    @Test
+    fun `senza cascata un dominio non valido non chiede di aprire app`() {
+        val p = onStream8()
+        p.openService("https://sito.com/")
+        listOf("https://192.168.1.10/", "https://localhost/", "https://co.uk/").forEach {
+            val v = p.evaluate(click(it))
+            assertFalse(it, v.mayLaunchApp)
+            assertFalse(it, v.confirmAppLaunch)
             assertEquals(it, WebAction.BLOCK, v.web)
         }
-        // nemmeno i link di TMDB o del proprio dominio devono tentare app
-        assertFalse(p.evaluate(click("https://www.themoviedb.org/x")).mayLaunchApp)
-        assertFalse(p.evaluate(click("https://www.sito.com/x")).mayLaunchApp)
     }
 
     @Test
@@ -370,7 +417,11 @@ class NavigationPolicyTest {
             "https://primevideo.com/open", // link https del servizio
             "intent://www.primevideo.com/detail/x#Intent;scheme=https;package=com.amazon.avod.thirdpartyclient;end",
             "primevideo://detail/x",
-        ).forEach { assertTrue(it, p.evaluate(click(it)).mayLaunchApp) }
+        ).forEach {
+            val v = p.evaluate(click(it))
+            assertTrue(it, v.mayLaunchApp)
+            assertFalse(it, v.confirmAppLaunch)
+        }
 
         // Nella cascata anche un nuovo dominio puo' tentare l'app, ma solo con un click.
         assertTrue(p.evaluate(click("https://altro.net/")).mayLaunchApp)
@@ -431,8 +482,13 @@ class NavigationPolicyTest {
         p.openService("https://sito.com/")
         assertEquals(WebAction.LOAD, p.evaluate(popup("https://www.sito.com/x")).web)
         assertEquals(WebAction.LOAD, p.evaluate(popup("https://www.themoviedb.org/x")).web)
-        assertEquals(WebAction.BLOCK, p.evaluate(popup("https://ads.example.net/")).web)
-        assertFalse(p.evaluate(popup("netflix://title/1")).mayLaunchApp)
+        val external = p.evaluate(popup("https://ads.example.net/"))
+        assertEquals(WebAction.BLOCK, external.web)
+        assertFalse(external.mayLaunchApp)
+        assertTrue(external.confirmAppLaunch)
+        val deepLink = p.evaluate(popup("netflix://title/1"))
+        assertFalse(deepLink.mayLaunchApp)
+        assertTrue(deepLink.confirmAppLaunch)
     }
 
     @Test

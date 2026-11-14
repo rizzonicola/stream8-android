@@ -22,29 +22,16 @@ data class IntentTarget(
  * con azione VIEW, categoria BROWSABLE e nessun componente.
  */
 object IntentUrlParser {
-    private const val PREFIX = "intent:"
     private const val MARKER = "#Intent;"
-    private val SCHEME = Regex("^[a-z][a-z0-9+.-]*$")
     private val PACKAGE = Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$")
 
-    private val FORBIDDEN_SCHEMES = setOf(
-        "intent", "http", "javascript", "data", "file", "content", "blob", "about", "view-source", "filesystem", "ftp",
-    )
-
-    /** Un intent:// non può essere usato per lanciare un browser esterno. */
-    private val BROWSER_PACKAGES = setOf(
-        "com.android.chrome", "com.chrome.beta", "com.chrome.dev", "com.chrome.canary", "org.chromium.chrome",
-        "org.mozilla.firefox", "org.mozilla.firefox_beta", "org.mozilla.fenix", "org.mozilla.focus",
-        "com.brave.browser", "com.microsoft.emmx", "com.opera.browser", "com.opera.mini.native",
-        "com.sec.android.app.sbrowser", "com.android.browser", "com.duckduckgo.mobile.android",
-        "com.vivaldi.browser", "com.kiwibrowser.browser", "org.chromium.webview_shell",
-    )
+    private val FORBIDDEN_SCHEMES = UrlSyntax.BLOCKED_SCHEMES + setOf("intent", "http")
 
     fun parse(url: String): IntentTarget? {
-        if (url.length > 8192 || !url.startsWith(PREFIX, ignoreCase = true)) return null
-        if (url.any { it.code <= 0x20 || it.code == 0x7F }) return null
+        if (url.length > UrlSyntax.MAX_LENGTH || UrlSyntax.schemeOf(url) != "intent") return null
+        if (UrlSyntax.hasUnsafeCharacters(url)) return null
 
-        val body = url.substring(PREFIX.length)
+        val body = url.substring(url.indexOf(':') + 1)
         val marker = body.indexOf(MARKER)
         if (marker < 0) return null
         val dataPart = body.substring(0, marker)
@@ -70,8 +57,8 @@ object IntentUrlParser {
         }
 
         val s = scheme ?: return null
-        if (!SCHEME.matches(s) || s in FORBIDDEN_SCHEMES) return null
-        if (packageName != null && (!PACKAGE.matches(packageName) || packageName in BROWSER_PACKAGES)) return null
+        if (!UrlSyntax.isValidScheme(s) || s in FORBIDDEN_SCHEMES) return null
+        if (packageName != null && (!PACKAGE.matches(packageName) || packageName in BrowserTargets.PACKAGES)) return null
 
         val safeFallback = fallback?.takeIf { UrlParser.parse(it)?.scheme == "https" }
         return IntentTarget(s, "$s:$dataPart", packageName, safeFallback)

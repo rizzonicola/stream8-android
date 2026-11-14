@@ -8,6 +8,8 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.Switch
 import android.widget.TextView
+import cc.poppi.stream8.adblock.AdBlockSettings
+import cc.poppi.stream8.navigation.PolicyDefaults
 
 /** Impostazioni minime: adblocker, ricarica Stream8, versione, regole di navigazione. */
 class SettingsActivity : Activity() {
@@ -20,18 +22,21 @@ class SettingsActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
-        val prefs = Prefs(this)
+        val settings = AdBlockSettings(this)
+
+        findViewById<TextView>(R.id.adblock_desc).text =
+            getString(R.string.adblock_desc, AdBlockSettings.REFRESH_DAYS)
 
         findViewById<Switch>(R.id.adblock_switch).apply {
-            isChecked = prefs.adblockEnabled
-            setOnCheckedChangeListener { _, checked -> prefs.adblockEnabled = checked }
+            isChecked = settings.enabled
+            setOnCheckedChangeListener { _, checked -> settings.enabled = checked }
         }
         findViewById<Button>(R.id.reload_button).setOnClickListener { reloadStream8() }
         findViewById<Button>(R.id.rules_button).setOnClickListener {
             AlertDialog.Builder(this)
                 .setTitle(R.string.nav_rules_title)
-                .setMessage(R.string.nav_rules_body)
-                .setPositiveButton(android.R.string.ok, null)
+                .setMessage(getString(R.string.nav_rules_body, PolicyDefaults.STREAM8_HOST, PolicyDefaults.TMDB_DOMAIN))
+                .setPositiveButton(R.string.action_ok, null)
                 .show()
         }
         findViewById<TextView>(R.id.version_text).text =

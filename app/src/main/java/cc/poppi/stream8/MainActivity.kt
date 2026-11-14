@@ -13,7 +13,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.WebChromeClient
-import android.webkit.WebView
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -31,13 +30,14 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import cc.poppi.stream8.adblock.AdBlocker
 import cc.poppi.stream8.adblock.AdBlockListUpdater
+import cc.poppi.stream8.adblock.AdBlockSettings
+import cc.poppi.stream8.navigation.AppLaunchTarget
 import cc.poppi.stream8.navigation.ImportLink
 import cc.poppi.stream8.navigation.LoadErrorKind
 import cc.poppi.stream8.navigation.NavigationPolicy
 import cc.poppi.stream8.navigation.PolicyDefaults
 import cc.poppi.stream8.navigation.Reason
 import cc.poppi.stream8.navigation.UrlParser
-import cc.poppi.stream8.navigation.hostMatches
 import cc.poppi.stream8.web.WebController
 import java.io.IOException
 
@@ -46,8 +46,8 @@ class MainActivity : ComponentActivity(), WebController.Ui {
 
     private val policy = NavigationPolicy()
     private lateinit var prefs: Prefs
+    private lateinit var adBlockSettings: AdBlockSettings
     private lateinit var controller: WebController
-    private lateinit var webView: WebView
 
     private lateinit var webLayer: FrameLayout
     private lateinit var root: FrameLayout
@@ -73,11 +73,14 @@ class MainActivity : ComponentActivity(), WebController.Ui {
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
     private var lastToastAt = 0L
 
+    /** Una sola conferma di apertura app alla volta: le richieste successive vengono scartate. */
+    private var confirmAppDialog: AlertDialog? = null
+
     private val backCallback = object : OnBackPressedCallback(true) {
         override fun handleOnBackPressed() {
             when {
                 customView != null -> hideCustomView()
-                webView.canGoBack() -> webView.goBack()
+                controller.handleBack() -> Unit
                 else -> {
                     isEnabled = false
                     onBackPressedDispatcher.onBackPressed()
@@ -89,37 +92,25 @@ class MainActivity : ComponentActivity(), WebController.Ui {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
+        adBlockSettings = AdBlockSettings(this)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         buildLayout()
         barColor = getColor(R.color.background)
         topBar.setBackgroundColor(barColor)
         applySystemBarIcons()
 
-        // Dopo la morte del processo: stato di navigazione e domini dei servizi già autorizzati.
-        policy.restore(
-            savedInstanceState?.getStringArrayList(KEY_VISITED),
-            cascade = savedInstanceState?.getBoolean(KEY_CASCADE, false) ?: false,
-        )
-
         val adBlocker = loadAdBlocker()
-        controller = WebController(this, policy, adBlocker, prefs, this)
-        if (adBlocker != null) AdBlockListUpdater(this, prefs, adBlocker).start()
-        attachNewWebView()
+        controller = WebController(this, policy, adBlocker, { adBlockSettings.enabled }, this)
+        AdBlockListUpdater(this, adBlockSettings, adBlocker).start()
+        controller.attach(webLayer)
         onBackPressedDispatcher.addCallback(this, backCallback)
 
-        val saved = savedInstanceState?.getBundle(KEY_WEB)
-        val restored = saved != null && webView.restoreState(saved) != null
-        if (!restored) {
+        if (!controller.restoreSession(savedInstanceState)) {
             // Al primo avvio si decide prima di caricare la home: se l'utente
             // importa, il link è la prima pagina e non viene sovrascritto dalla
             // navigazione iniziale ancora in corso.
             if (savedInstanceState == null && !prefs.firstRunDone) showImportDialog(firstRun = true)
             else controller.loadHome()
-        } else if (savedInstanceState?.getBoolean(KEY_TOP_BAR_VISIBLE, false) == true) {
-            // Dopo la morte del processo la pagina esterna viene ripristinata senza
-            // un nuovo commit: la fascia deve tornare visibile subito.
-            topBar.visibility = View.VISIBLE
-            applyContentTopInset()
         }
     }
 
@@ -142,7 +133,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
             isClickable = false
             isFocusable = false
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            visibility = View.GONE // su Stream8 la pagina arriva fino in alto; fuori da Stream8 si mostra
+            visibility = View.GONE
         }
         errorView = buildErrorView()
         settingsButton = ImageButton(this).apply {
@@ -191,13 +182,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
     /** Sposta la pagina sotto la fascia quando è visibile: non deve mai coprirla. */
     private fun applyContentTopInset() {
         val offset = if (topBar.visibility == View.VISIBLE) topInset else 0
-        if (::webView.isInitialized) {
-            val params = webView.layoutParams as FrameLayout.LayoutParams
-            if (params.topMargin != offset) {
-                params.topMargin = offset
-                webView.requestLayout()
-            }
-        }
+        if (::controller.isInitialized) controller.setContentTopInset(offset)
         val progressParams = progressBar.layoutParams as FrameLayout.LayoutParams
         if (progressParams.topMargin != offset) {
             progressParams.topMargin = offset
@@ -223,7 +208,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         retryButton = Button(context).apply {
             setText(lc.getString(R.string.retry))
             setOnClickListener {
-                errorView.visibility = View.GONE // non `visibility`: dentro apply sarebbe il Button
+                errorView.visibility = View.GONE
                 controller.retry()
             }
         }
@@ -240,11 +225,6 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         addView(openSettingsButton)
     }
 
-    private fun attachNewWebView() {
-        webView = controller.createWebView()
-        webLayer.addView(webView, 0, FrameLayout.LayoutParams(MATCH, MATCH))
-    }
-
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     /** Contesto per i testi nativi nella lingua scelta sul sito. */
@@ -257,10 +237,11 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         LoadErrorKind.OTHER -> R.string.error_other
     }
 
-    private fun loadAdBlocker(): AdBlocker? = try {
-        assets.open("adblock-domains.txt").use { AdBlocker.fromStream(it) }
+    private fun loadAdBlocker(): AdBlocker = try {
+        assets.open(AdBlocker.LIST_FILE).use { AdBlocker.fromStream(it) }
     } catch (e: IOException) {
-        null // senza lista l'adblocker semplicemente non filtra nulla
+        // Una lista vuota non filtra nulla; l'aggiornamento in background può comunque scaricarla.
+        AdBlocker(emptyList())
     }
 
     private fun openSettings() {
@@ -289,7 +270,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
     private fun showImportDialog(firstRun: Boolean) {
         val lc = localized()
         val input = EditText(this).apply {
-            hint = lc.getString(R.string.import_hint)
+            hint = lc.getString(R.string.import_hint, PolicyDefaults.STREAM8_HOST, ImportLink.PATH)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             setSingleLine(true)
         }
@@ -303,20 +284,18 @@ class MainActivity : ComponentActivity(), WebController.Ui {
             .setView(container)
             .setPositiveButton(lc.getString(R.string.import_action), null)
             .setNegativeButton(
-                lc.getString(if (firstRun) R.string.continue_without_import else android.R.string.cancel),
+                lc.getString(if (firstRun) R.string.continue_without_import else R.string.action_cancel),
                 null,
             )
             .create()
 
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val url = ImportLink.parse(input.text.toString())
-                if (url == null) {
-                    input.error = lc.getString(R.string.import_invalid)
+                if (!controller.loadImport(input.text.toString())) {
+                    input.error = lc.getString(R.string.import_invalid, PolicyDefaults.STREAM8_HOST, ImportLink.PATH)
                 } else {
                     prefs.firstRunDone = true
                     dialog.dismiss()
-                    controller.loadImport(url)
                 }
             }
             if (firstRun) {
@@ -336,8 +315,8 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         val lc = localized()
         AlertDialog.Builder(this)
             .setTitle(lc.getString(R.string.info_title))
-            .setMessage(lc.getString(R.string.info_body))
-            .setPositiveButton(lc.getString(android.R.string.ok), null)
+            .setMessage(lc.getString(R.string.info_body, PolicyDefaults.STREAM8_HOST))
+            .setPositiveButton(lc.getString(R.string.action_ok), null)
             .show()
     }
 
@@ -360,10 +339,10 @@ class MainActivity : ComponentActivity(), WebController.Ui {
     }
 
     /** Lingua scelta sul sito: aggiorna i testi nativi senza ricreare la WebView. */
-    override fun onUiLanguage(language: String) {
-        val lang = NativeLocale.normalize(language) ?: return
-        if (prefs.uiLanguage == lang) return
-        prefs.uiLanguage = lang
+    override fun onUiLanguage(language: String?) {
+        val normalized = NativeLocale.normalize(language)
+        if (prefs.uiLanguage == normalized) return
+        prefs.uiLanguage = normalized
         applyNativeLanguage()
     }
 
@@ -377,7 +356,7 @@ class MainActivity : ComponentActivity(), WebController.Ui {
 
     /** Fascia a tema solo nelle pagine esterne (TMDB, servizi, ecc.), non su Stream8. */
     override fun onMainFrameHost(host: String?) {
-        val external = host != null && !hostMatches(host, PolicyDefaults.STREAM8_HOST)
+        val external = host != null && !PolicyDefaults.isStream8(host)
         val target = if (external) View.VISIBLE else View.GONE
         if (topBar.visibility == target) return
         topBar.visibility = target
@@ -417,17 +396,46 @@ class MainActivity : ComponentActivity(), WebController.Ui {
         val message = when (reason) {
             Reason.EXTERNAL_APP -> lc.getString(R.string.no_app)
             Reason.APP_LAUNCH_FORBIDDEN -> lc.getString(R.string.blocked_app)
-            else -> lc.getString(R.string.blocked_navigation, UrlParser.parse(url)?.host ?: "")
+            else -> {
+                val target = UrlParser.parse(url)?.let { it.host ?: it.scheme }.orEmpty()
+                lc.getString(R.string.blocked_navigation, target)
+            }
         }
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 
-    override fun onRenderProcessGone() {
-        runOnUiThread {
-            controller.destroyWebView()
-            attachNewWebView()
-            controller.loadHome()
+    /**
+     * Fuori dalla cascata TMDB l'apertura di un'app esterna richiede una conferma esplicita.
+     * Una sola finestra alla volta; il callback viene invocato esattamente una volta.
+     */
+    override fun confirmExternalApp(url: String, onDecision: (Boolean) -> Unit) {
+        if (confirmAppDialog != null || isFinishing || isDestroyed) {
+            onDecision(false)
+            return
         }
+        val lc = localized()
+        var decided = false
+        fun decide(open: Boolean) {
+            if (decided) return
+            decided = true
+            onDecision(open)
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(lc.getString(R.string.confirm_app_title))
+            .setMessage(lc.getString(R.string.confirm_app_message, AppLaunchTarget.label(url)))
+            .setPositiveButton(lc.getString(R.string.confirm_app_open)) { _, _ -> decide(true) }
+            .setNegativeButton(lc.getString(R.string.action_cancel)) { _, _ -> decide(false) }
+            .create()
+        dialog.setOnDismissListener {
+            confirmAppDialog = null
+            decide(false)
+        }
+        confirmAppDialog = dialog
+        dialog.show()
+    }
+
+    override fun onRenderProcessGone() {
+        runOnUiThread { controller.recover() }
     }
 
     override fun showCustomView(view: View, callback: WebChromeClient.CustomViewCallback) {
@@ -464,34 +472,24 @@ class MainActivity : ComponentActivity(), WebController.Ui {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        outState.putStringArrayList(KEY_VISITED, policy.snapshot())
-        outState.putBoolean(KEY_CASCADE, policy.cascadeEnabled)
-        outState.putBoolean(KEY_TOP_BAR_VISIBLE, topBar.visibility == View.VISIBLE)
-        // Con cronologie molto lunghe lo stato supererebbe il limite delle transazioni Binder: non si salva.
-        if (webView.copyBackForwardList().size <= MAX_SAVED_HISTORY) {
-            val webState = Bundle()
-            webView.saveState(webState)
-            outState.putBundle(KEY_WEB, webState)
-        }
+        controller.saveSession(outState)
     }
 
     override fun onResume() {
         super.onResume()
-        webView.onResume()
-        controller.startThemeSampling()
+        controller.onHostResume()
         applyImmersive()
     }
 
     override fun onPause() {
-        controller.stopThemeSampling()
-        webView.onPause()
-        android.webkit.CookieManager.getInstance().flush() // la sessione sopravvive alla chiusura dell'app
+        controller.onHostPause()
         super.onPause()
     }
 
     override fun onDestroy() {
+        confirmAppDialog?.dismiss()
         hideCustomView()
-        controller.destroyWebView()
+        controller.detach()
         super.onDestroy()
     }
 
@@ -518,11 +516,6 @@ class MainActivity : ComponentActivity(), WebController.Ui {
 
     companion object {
         const val EXTRA_RELOAD_HOME = "cc.poppi.stream8.RELOAD_HOME"
-        private const val KEY_VISITED = "visited_scopes"
-        private const val KEY_CASCADE = "cascade_enabled"
-        private const val KEY_TOP_BAR_VISIBLE = "top_bar_visible"
-        private const val KEY_WEB = "web_state"
-        private const val MAX_SAVED_HISTORY = 15
         private const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         private const val MENU_SETTINGS = 1
         private const val MENU_IMPORT = 2

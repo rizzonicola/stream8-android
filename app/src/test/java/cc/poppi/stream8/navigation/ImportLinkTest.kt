@@ -13,6 +13,12 @@ class ImportLinkTest {
     }
 
     @Test
+    fun `rifiuta un payload oltre il limite dell'URL`() {
+        val huge = "https://stream8.poppi.cc/import-settings?data=" + "a".repeat(9000)
+        assertNull(ImportLink.parse(huge))
+    }
+
+    @Test
     fun `rifiuta host, percorso, schema e payload non validi`() {
         listOf(
             "http://stream8.poppi.cc/import-settings?data=x",

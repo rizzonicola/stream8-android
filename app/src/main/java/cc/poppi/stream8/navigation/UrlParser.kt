@@ -15,21 +15,16 @@ data class ParsedUrl(val scheme: String, val host: String?, val port: Int?)
  * vengono rifiutati.
  */
 object UrlParser {
-    private const val MAX_LENGTH = 8192
-    private val SCHEME = Regex("^[a-z][a-z0-9+.-]*$")
     private val LABEL = Regex("^[a-z0-9_]([a-z0-9_-]*[a-z0-9_])?$")
 
     fun parse(raw: String): ParsedUrl? {
-        if (raw.isEmpty() || raw.length > MAX_LENGTH) return null
-        if (raw.any { it.code <= 0x20 || it.code == 0x7F || it == '\\' }) return null
+        if (raw.isEmpty() || raw.length > UrlSyntax.MAX_LENGTH) return null
+        if (UrlSyntax.hasUnsafeCharacters(raw)) return null
 
-        val colon = raw.indexOf(':')
-        if (colon <= 0) return null
-        val scheme = raw.substring(0, colon).lowercase(Locale.ROOT)
-        if (!SCHEME.matches(scheme)) return null
+        val scheme = UrlSyntax.schemeOf(raw) ?: return null
         if (scheme != "http" && scheme != "https") return ParsedUrl(scheme, null, null)
 
-        val rest = raw.substring(colon + 1)
+        val rest = raw.substring(scheme.length + 1)
         if (!rest.startsWith("//")) return null
         val afterSlashes = rest.substring(2)
         val end = afterSlashes.indexOfFirst { it == '/' || it == '?' || it == '#' }

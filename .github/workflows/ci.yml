@@ -51,7 +51,7 @@ jobs:
       - name: Lint e compilazione debug
         run: gradle --no-daemon lintDebug assembleDebug
 
-      - name: Compilazione release (non firmata) e verifica dei 4 APK
+      - name: Compilazione release (non firmata) e verifica degli APK
         run: |
           gradle --no-daemon collectReleaseApks
           REQUIRE_SIGNED=0 bash scripts/verify-apks.sh build/dist

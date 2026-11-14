@@ -70,7 +70,6 @@ class AdBlockerTest {
         val b = AdBlocker(listOf("vecchio.com"))
         assertTrue(b.shouldBlock("vecchio.com", page))
         b.update(listOf("nuovo.com", "altro.net"))
-        assertEquals(2, b.size)
         assertFalse(b.shouldBlock("vecchio.com", page))
         assertTrue(b.shouldBlock("sub.nuovo.com", page))
         assertTrue(b.shouldBlock("altro.net", page))
@@ -80,8 +79,8 @@ class AdBlockerTest {
     fun `fromStream carica una lista e ignora le righe non valide`() {
         val list = "# test\nads.one.com\n\nbroken line here!\n0.0.0.0 ads.two.net\n"
         val b = AdBlocker.fromStream(list.byteInputStream())
-        assertEquals(2, b.size)
         assertTrue(b.shouldBlock("x.ads.one.com", page))
         assertTrue(b.shouldBlock("ads.two.net", page))
+        assertFalse(b.shouldBlock("safe.example", page))
     }
 }

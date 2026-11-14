@@ -33,12 +33,15 @@ dell'utente, redirect sì/no).
 | SERVICE con cascata attiva → altro dominio (nome valido) | sì | **apre come nuovo servizio** (la cascata prosegue) | **sì**, prima della WebView |
 | SERVICE con cascata attiva → altro dominio | redirect del server | **apre come nuovo servizio** (la cascata prosegue) | no |
 | SERVICE con cascata attiva → altro dominio | no (né gesto né redirect) | **blocca** | no |
-| SERVICE senza cascata → qualunque altro | – | **blocca** | **no** |
+| SERVICE senza cascata → dominio del servizio | sì / no | carica | no |
+| SERVICE senza cascata → altro dominio (nome valido) | sì | **blocca la WebView; chiede conferma per aprire l'app esterna** | **sì, dopo conferma** |
+| SERVICE senza cascata → altro dominio | no / redirect | **blocca** | no |
 | SERVICE → TMDB | – | carica | **no** |
 | SERVICE → Stream8 | – | **blocca** | no |
 
 Per `intent://` e deep link (`netflix://…`): l'esito web è sempre *blocca*; l'app si tenta da STREAM8, TMDB e dai servizi
-della cascata TMDB con gesto reale (mai da un servizio senza cascata, da navigazioni automatiche o da redirect). `http://`, `javascript:`, `data:`, `file:`, `content:`,
+della cascata TMDB con gesto reale (mai da navigazioni automatiche o da redirect). Da un servizio senza cascata un click reale
+può aprire un'app solo dopo una conferma esplicita; senza gesto o con un redirect resta bloccato. `http://`, `javascript:`, `data:`, `file:`, `content:`,
 `blob:`, `about:`, `ftp:` e i deep link verso browser sono sempre bloccati. I popup (`window.open`, `target="_blank"`) seguono
 le stesse regole e **richiedono** un gesto reale.
 
@@ -48,8 +51,8 @@ La cascata parte quando viene caricata una pagina TMDB (anche raggiunta da un se
 nella catena: da quel momento **TMDB e ogni servizio aperto possono aprire nuovi domini con un click reale o tramite i
 redirect del server** (es. TMDB → JustWatch → Prime Video), e i nuovi domini possono fare altrettanto, senza limiti di
 passaggi. Nella cascata anche i servizi raggiunti possono aprire la propria app (App Link `https`, `intent://` o deep link)
-con un tocco reale. Senza TMDB nella catena, un servizio può navigare solo nel proprio dominio (più TMDB) e non può aprire
-app: un link verso un altro sito viene bloccato.
+con un tocco reale. Senza TMDB nella catena, un servizio può navigare solo nel proprio dominio (più TMDB); un link verso
+un altro sito resta bloccato nella WebView ma, con un tocco reale, può chiedere conferma per aprire un'app esterna.
 
 La cascata si azzera quando si torna a Stream8 (Indietro/Avanti o "Ricarica Stream8"): la catena successiva riparte da
 Stream8 e, se non passa da TMDB, resta senza cascata. Senza cascata i redirect restano nel dominio che Stream8 ha appena

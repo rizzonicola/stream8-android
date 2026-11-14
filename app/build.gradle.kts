@@ -4,6 +4,9 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Identificatore stabile: namespace, applicationId e verifica degli APK.
+val appId = "cc.poppi.stream8"
+
 // Versione: il workflow di release la passa con -PappVersionName=MAJOR.MINOR.PATCH.
 // versionCode = MAJOR*10000 + MINOR*100 + PATCH, quindi cresce a ogni release (MINOR e PATCH <= 99).
 val appVersionName: String = (findProperty("appVersionName") as String?) ?: "1.0.0"
@@ -14,12 +17,15 @@ val appVersionCode: Int = run {
     major.toInt() * 10_000 + minor.toInt() * 100 + patch.toInt()
 }
 
+// Unica lista delle ABI: usata dagli split e dai nomi degli APK attesi.
+val abis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+
 android {
-    namespace = "cc.poppi.stream8"
+    namespace = appId
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "cc.poppi.stream8" // identificatore stabile: non cambiarlo dopo la prima release
+        applicationId = appId // identificatore stabile: non cambiarlo dopo la prima release
         minSdk = 24
         targetSdk = 35
         versionCode = appVersionCode
@@ -52,20 +58,12 @@ android {
         }
     }
 
-    // L'interfaccia nativa cambia lingua a runtime: se un giorno si costruisse
-    // un App Bundle, tutte le lingue devono restare incluse (nessuno split).
-    bundle {
-        language {
-            enableSplit = false
-        }
-    }
-
-    // Tre ABI + APK universale. Niente x86 a 32 bit.
+    // ABI elencate in `abis`, più l'APK universale. Niente x86 a 32 bit.
     splits {
         abi {
             isEnable = true
             reset()
-            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            include(*abis.toTypedArray())
             isUniversalApk = true
         }
     }
@@ -83,7 +81,6 @@ android {
     }
 
     lint {
-        abortOnError = false
         checkReleaseBuilds = false
     }
 
@@ -107,20 +104,16 @@ dependencies {
 }
 
 // Copia gli APK release in <root>/build/dist con i nomi Stream8-<abi>.apk e fallisce se ne manca uno.
-val expectedApkNames = listOf(
-    "Stream8-arm64-v8a.apk",
-    "Stream8-armeabi-v7a.apk",
-    "Stream8-x86_64.apk",
-    "Stream8-universal.apk",
-)
+val expectedApkNames = abis.map { "Stream8-$it.apk" } + "Stream8-universal.apk"
 val distDir = rootProject.layout.buildDirectory.dir("dist")
 
 tasks.register<Copy>("collectReleaseApks") {
     group = "distribution"
-    description = "Compila la release e raccoglie i 4 APK in build/dist (Stream8-<abi>.apk)."
+    description = "Compila la release e raccoglie gli APK in build/dist (Stream8-<abi>.apk)."
     dependsOn("assembleRelease")
 
-    val nameRegex = Regex("""app-(universal|arm64-v8a|armeabi-v7a|x86_64)-release(-unsigned)?\.apk""")
+    val apkArchitectures = (listOf("universal") + abis).joinToString("|") { Regex.escape(it) }
+    val nameRegex = Regex("""app-($apkArchitectures)-release(-unsigned)?\.apk""")
     from(layout.buildDirectory.dir("outputs/apk/release")) {
         include("*.apk")
         eachFile {
@@ -138,6 +131,9 @@ tasks.register<Copy>("collectReleaseApks") {
         if (missing.isNotEmpty()) {
             throw GradleException("APK mancanti in ${dir.path}: ${missing.joinToString()}")
         }
+        // Fonti uniche per scripts/verify-apks.sh: ABI, nomi e applicationId.
+        File(dir, "expected-apks.txt").writeText(expectedApkNames.joinToString("\n", postfix = "\n"))
+        File(dir, "expected-app-id.txt").writeText("$appId\n")
         logger.lifecycle("APK pronti in ${dir.path}: ${expectedApkNames.joinToString()}")
     }
 }

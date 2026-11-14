@@ -2,6 +2,7 @@ package cc.poppi.stream8.adblock
 
 import cc.poppi.stream8.navigation.PolicyDefaults
 import cc.poppi.stream8.navigation.DomainScope
+import cc.poppi.stream8.navigation.hostMatches
 import java.io.InputStream
 import java.util.Locale
 
@@ -20,8 +21,6 @@ class AdBlocker(domains: Collection<String>) {
     /** Sostituita in modo atomico dall'aggiornamento in background: mai un insieme a metà. */
     @Volatile
     private var blocked: Set<String> = normalize(domains)
-
-    val size: Int get() = blocked.size
 
     /** Applica una lista nuova (cache o download); le richieste in corso vedono la vecchia o la nuova. */
     fun update(domains: Collection<String>) {
@@ -42,16 +41,18 @@ class AdBlocker(domains: Collection<String>) {
         }
     }
 
+    /** Stream8, TMDB e le immagini TMDB non si bloccano mai, anche se finissero nella lista. */
+    private fun isProtected(host: String): Boolean =
+        PolicyDefaults.isStream8(host) ||
+            PolicyDefaults.isTmdb(host) ||
+            hostMatches(host, PolicyDefaults.TMDB_IMAGE_HOST)
+
     private fun normalize(domains: Collection<String>): Set<String> =
         domains.mapNotNull { normalizeDomain(it) }.toHashSet()
 
-    private fun isProtected(host: String): Boolean =
-        host == PolicyDefaults.STREAM8_HOST || host.endsWith(".${PolicyDefaults.STREAM8_HOST}") ||
-            host == PolicyDefaults.TMDB_DOMAIN || host.endsWith(".${PolicyDefaults.TMDB_DOMAIN}") ||
-            host == PolicyDefaults.TMDB_IMAGE_HOST
-
     private fun isSameSite(host: String, pageHost: String): Boolean {
-        val page = pageHost.lowercase(Locale.ROOT)
+        val page = pageHost.lowercase(Locale.ROOT).trimEnd('.')
+        // Copre anche gli host senza dominio registrabile (es. localhost).
         if (host == page) return true
         val a = DomainScope.of(host)?.domain ?: return false
         val b = DomainScope.of(page)?.domain ?: return false
@@ -59,6 +60,9 @@ class AdBlocker(domains: Collection<String>) {
     }
 
     companion object {
+        /** Nome dell'asset incorporato e della copia aggiornata nella cache. */
+        const val LIST_FILE = "adblock-domains.txt"
+
         private val VALID = Regex("^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$")
 
         /** Limite di sicurezza per una lista scaricata: evita file enormi o corrotti in memoria. */

@@ -7,7 +7,7 @@ Questo repository è **separato** da [`rizzonicola/stream8`](https://github.com/
 ricostruisce il sito in Kotlin, carica `https://stream8.poppi.cc/`.
 
 > **Stato della verifica:** test unitari e build debug/release firmata eseguiti localmente il 13/11/2026 con JDK 17,
-> Gradle 8.9 e Android SDK 35: tutti verdi. La release GitHub `v0.0.7` è l'ultima verifica end-to-end dei workflow:
+> Gradle 8.10.2 e Android SDK 35: tutti verdi. La release GitHub `v0.0.7` è l'ultima verifica end-to-end dei workflow:
 > vedi [Stato della verifica](#stato-della-verifica).
 
 ## Cosa fa
@@ -18,7 +18,7 @@ ricostruisce il sito in Kotlin, carica `https://stream8.poppi.cc/`.
 - Mantiene cookie, Local Storage e sessioni; barra di caricamento discreta; errore di connessione con pulsante **Riprova**.
 - Usa la cache del service worker del sito: la shell si apre subito dalla cache e si aggiorna in background; i dati dinamici restano sempre in rete.
 - Quando da Stream8 si apre un servizio esterno, **solo quel dominio** (con i suoi sottodomini) diventa navigabile; TMDB resta sempre raggiungibile. Quando entra in gioco TMDB la navigazione procede **a cascata** su nuovi domini, ricorsivamente. Dettagli in [docs/NAVIGAZIONE.md](docs/NAVIGAZIONE.md).
-- Può aprire app Android installate (es. un'app di streaming) **solo** da pagine Stream8, TMDB o servizi della cascata TMDB, **solo** con un tocco reale dell'utente.
+- Può aprire app Android installate (es. un'app di streaming) **solo** con un tocco reale dell'utente: da pagine Stream8, TMDB e servizi della cascata TMDB direttamente; da un servizio fuori dalla cascata solo dopo una conferma esplicita.
 - Solo HTTPS, certificati sempre verificati, nessun bridge JavaScript, nessun accesso a file locali, nessun browser esterno.
 - Adblocker leggero a elenco di domini (OISD Small), aggiornato automaticamente in background, disattivabile.
 - Smartphone, tablet e Android TV (banner, `LEANBACK_LAUNCHER`, touch non obbligatorio, tasto Menu per le impostazioni).
@@ -56,7 +56,7 @@ Requisiti: JDK 17, Android SDK (piattaforma 35, build-tools 35.0.0) con `ANDROID
 gradle wrapper --gradle-version 8.10.2   # una sola volta, vedi nota sotto
 ./gradlew testDebugUnitTest              # test unitari
 ./gradlew assembleDebug                  # APK di debug
-./gradlew collectReleaseApks             # i 4 APK release in build/dist/
+./gradlew collectReleaseApks             # gli APK release in build/dist/
 ```
 
 > **Nota sul Gradle Wrapper:** `gradle/wrapper/gradle-wrapper.jar` è un file binario che non è stato possibile
@@ -84,11 +84,11 @@ versionName e che nessun APK per-ABI contenga librerie native di un'altra archit
 
 | Workflow | Quando | Cosa fa |
 |---|---|---|
-| `ci.yml` | push su `main`, pull request, avvio manuale | verifica configurazione Gradle, test unitari, lint, build debug, build release non firmata + verifica dei 4 APK |
-| `release.yml` | tag `vX.Y.Z`, avvio manuale | test, build release **firmata**, verifica APK, SHA-256, GitHub Release con i 4 APK e `SHA256SUMS.txt` |
+| `ci.yml` | push su `main`, pull request, avvio manuale | verifica configurazione Gradle, test unitari, lint, build debug, build release non firmata + verifica degli APK |
+| `release.yml` | tag `vX.Y.Z`, avvio manuale | test, build release **firmata**, verifica APK, SHA-256, GitHub Release con gli APK e `SHA256SUMS.txt` |
 
 Nessuna release viene pubblicata a ogni commit. `release.yml` **si ferma con un errore esplicativo** se mancano i Secrets
-di firma: non pubblica mai APK non firmati. Fallisce anche se manca uno dei quattro APK (`fail_on_unmatched_files`).
+di firma: non pubblica mai APK non firmati. Fallisce anche se manca uno degli APK (`fail_on_unmatched_files`).
 
 ### Configurazione della firma
 
@@ -123,31 +123,34 @@ Riassunto (tabella completa e casi limite in [docs/NAVIGAZIONE.md](docs/NAVIGAZI
 Non vale per domini simili (`themoviedb.org.evil.com`, `notthemoviedb.org`, `tmdb.org`…). `image.tmdb.org` è un host **solo per
 risorse** (immagini): non è una destinazione di navigazione e non viene mai filtrato dall'adblocker.
 
-La cascata vale solo per le **navigazioni web** e per l'apertura di app dai servizi raggiunti: l'apertura di app Android resta
-consentita da Stream8, da TMDB e dai servizi della cascata (sempre solo con un tocco reale), mai da un servizio senza TMDB
-nella catena e mai da redirect o navigazioni automatiche. I redirect restano chiusi verso nuovi domini finché la cascata non
-è attiva (quindi mai da soli Stream8); una volta partita da TMDB, i redirect possono attraversare più domini senza altri
-tocchi (es. JustWatch → Prime Video).
+La cascata vale solo per le **navigazioni web** e per l'apertura diretta di app dai servizi raggiunti: l'apertura di app
+Android resta immediata da Stream8, da TMDB e dai servizi della cascata (sempre solo con un tocco reale), mai da redirect o
+navigazioni automatiche. Un servizio senza TMDB nella catena può solo chiedere conferma prima di aprire un'app; la WebView
+resta bloccata sui nuovi domini. I redirect restano chiusi verso nuovi domini finché la cascata non è attiva (quindi mai da
+soli Stream8); una volta partita da TMDB, i redirect possono attraversare più domini senza altri tocchi (es. JustWatch →
+Prime Video).
 
 ## Apertura delle applicazioni Android
 
-L'apertura di app esterne è consentita **esclusivamente** se la pagina attualmente caricata è Stream8, TMDB oppure un servizio
-della **cascata TMDB** (non un servizio aperto direttamente da Stream8) **e** il link è stato toccato dall'utente (gesto reale;
-non redirect né navigazioni automatiche):
+L'apertura di app esterne avviene **senza conferma** se la pagina attualmente caricata è Stream8, TMDB oppure un servizio
+della **cascata TMDB** **e** il link è stato toccato dall'utente (gesto reale; non redirect né navigazioni automatiche).
+Da un servizio aperto direttamente da Stream8, fuori dalla cascata TMDB, un click reale può aprire un'app solo dopo una
+**conferma esplicita**; senza gesto o con un redirect l'app non viene mai aperta.
 
 - link `https`: si apre solo un'app non-browser che gestisce quel link come App Link (Android 11+: `FLAG_ACTIVITY_REQUIRE_NON_BROWSER`; Android 7–10: ricerca dei gestori non-browser); niente selettore;
 - `intent://`: l'Intent è **ricostruito** dall'app (azione VIEW, categoria BROWSABLE, nessun componente/selector/extra, mai un browser) a partire da scheme, package e `browser_fallback_url`; `Intent.parseUri` non viene usato;
-- deep link personalizzati (`netflix://…`): VIEW + BROWSABLE; deep link verso browser (`googlechrome://…`) bloccati.
+- deep link personalizzati (`netflix://…`): VIEW + BROWSABLE, con scelta di un gestore visibile non-browser (su Android 11+ il flag di sistema vale solo per http/https); deep link verso browser (`googlechrome://…`) bloccati.
 
 Se non esiste un'app compatibile **non** si apre mai un browser: si applica la whitelist della WebView (aperto internamente se
-autorizzato, altrimenti bloccato). Da un servizio esterno (`sito.com`) nulla di tutto ciò è possibile, anche con Netflix installato.
+autorizzato, altrimenti bloccato). Fuori dalla cascata, un link verso un altro dominio o un deep link viene bloccato nella
+WebView e, se l'utente conferma, si tenta solo l'apertura dell'app: la navigazione non acquisisce nuovi domini.
 La decisione si basa sulla **pagina principale realmente caricata**, mai sul referrer, su parametri JavaScript o sul dominio dichiarato dal link.
 
 ## Adblocker
 
 Filtro a elenco di domini, attivo di default, disattivabile dalle Impostazioni. All'avvio usa la lista incorporata
-(`app/src/main/assets/adblock-domains.txt`, 53 domini di fallback) e in background carica l'ultima lista salvata; se ha più
-di 7 giorni scarica **OISD Small** (`https://small.oisd.nl/domainswild`, circa 1,3 MB, oltre 62.000 domini) e la sostituisce
+(`app/src/main/assets/adblock-domains.txt`, 39 domini di fallback) e in background carica l'ultima lista salvata; se ha più
+di `AdBlockSettings.REFRESH_DAYS` giorni scarica **OISD Small** (`https://small.oisd.nl/domainswild`, circa 1,3 MB, oltre 62.000 domini) e la sostituisce
 in modo atomico. Un errore di rete, un timeout o un file non valido lasciano intatta la lista precedente. Il download e il
 parsing avvengono fuori dal thread principale; l'elenco completo occupa pochi MB in memoria.
 
@@ -166,12 +169,14 @@ pochi falsi positivi. Licenza OISD: GPL-3.0, © Stephan van Ruth.
 
 ```
 app/src/main/java/cc/poppi/stream8/
-  navigation/   NavigationPolicy, UrlParser, DomainScope, IntentUrl, LoadError   (logica pura, testata)
-  adblock/      AdBlocker, AdBlockListUpdater (logica pura + aggiornamento OISD)      (testata)
+  navigation/   NavigationPolicy, PolicyDefaults, UrlParser, UrlSyntax, BrowserTargets,
+                DomainScope, IntentUrl, ImportLink, LoadError                  (logica pura, testata)
+  adblock/      AdBlocker, AdBlockListUpdater, AdBlockSettings                    (testata)
   web/          WebController (WebView + 3 livelli di difesa), ExternalAppLauncher
   MainActivity, SettingsActivity, Prefs
 app/src/test/   test unitari JVM (JUnit 4)
 .github/workflows/ci.yml, release.yml · scripts/verify-apks.sh · docs/
+build/dist/expected-apks.txt, expected-app-id.txt   (generati da collectReleaseApks, letti dallo script)
 ```
 
 ## Limiti conosciuti
@@ -179,7 +184,7 @@ app/src/test/   test unitari JVM (JUnit 4)
 - **Servizi su rete locale o in HTTP**: HTTPS è obbligatorio e gli indirizzi IP sono rifiutati. Un server Jellyfin/Plex raggiunto con `http://192.168.x.x:8096` (o con un certificato non valido) **non si apre**. Funzionano nomi di dominio con certificato valido (porta qualsiasi).
 - **Login su un altro dominio** (OAuth/SSO, es. un servizio che autentica su un dominio diverso dal proprio) è bloccato dalla regola "un servizio non può aprire altri domini", **a meno che** TMDB sia già nella catena: in quel caso il click reale apre il nuovo dominio e la cascata prosegue.
 - **Redirector**: se un link di Stream8 passa da un dominio intermedio che poi reindirizza al servizio vero, il secondo salto è bloccato (i redirect devono restare nel dominio aperto da Stream8).
-- **Frame di origine**: l'API WebView non indica quale frame ha avviato una navigazione. La fiducia è basata sulla pagina principale: un iframe di terze parti dentro una pagina Stream8/TMDB potrebbe far partire un'apertura di app *solo* con un vero tocco dell'utente. Gli iframe non possono comunque navigare altrove senza passare dalla policy.
+- **Frame di origine**: l'API WebView non indica quale frame ha avviato una navigazione. La fiducia è basata sulla pagina principale: un iframe di terze parti dentro una pagina Stream8/TMDB potrebbe far partire un'apertura di app *solo* con un vero tocco dell'utente: nella cascata TMDB l'apertura è immediata, fuori dalla cascata richiede una conferma esplicita. Gli iframe non possono comunque navigare altrove senza passare dalla policy.
 - **Iframe di terze parti** sono consentiti (servono ai player); possono caricare contenuti da qualunque host HTTPS, ma non uscire dal frame.
 - Un `window.open()` eseguito dopo un'attesa lunga può perdere il gesto utente (limite di WebView) e viene bloccato.
 - **Cookie di terze parti** sono abilitati (necessari ai player incorporati).
@@ -199,12 +204,12 @@ distribuito con la stessa licenza e fonte dell'icona e del banner dell'app.
 
 | Verifica | Esito |
 |---|---|
-| Compilazione Gradle/Kotlin/APK | **Eseguita** localmente (Gradle 8.9, JDK 17, Android SDK 35): debug e release firmata OK |
-| Test unitari (66 casi) | **Eseguiti** localmente: tutti PASS |
+| Compilazione Gradle/Kotlin/APK | **Eseguita** localmente (Gradle 8.10.2, JDK 17, Android SDK 35): debug e release firmata OK |
+| Test unitari (67 casi) | **Eseguiti** localmente: tutti PASS |
 | Workflow GitHub Actions | Sintassi YAML valida; esecuzione end-to-end con le release `v0.0.3`, `v0.0.4`, `v0.0.5`, `v0.0.6` e `v0.0.7` |
 | Aggiornamento adblock (OISD) | **Verificato** su Waydroid con l'APK `0.0.5`: 62.336 domini scaricati e applicati; Stream8 carica regolarmente |
 | Fascia superiore e navbar | **Verificata** su Waydroid con inset superiore forzato a 60 px: su TMDB la fascia occupa `0..60` e la WebView inizia a `y=60`, senza coprire il contenuto; su Stream8 la fascia è `GONE` e la WebView parte da `0`. L'emulatore non espone un inset reale maggiore di zero, quindi il test usa un inset temporaneo |
 | Lingua dell'interfaccia nativa | **Verificata** su Waydroid: con il sito in inglese, francese e italiano, menu, Impostazioni, regole e Info e licenze cambiano lingua; con **Automatico** seguono la lingua di sistema (fallback inglese), come il sito |
-| `scripts/verify-apks.sh` | **Eseguito** sui 4 APK reali: presenza, zip, firma, applicationId, versionName OK |
+| `scripts/verify-apks.sh` | **Eseguito** sugli APK reali: presenza, zip, firma, applicationId, versionName OK |
 | XML e risorse Android | Compilati da AAPT2; icona adattiva e fallback PNG verificati nell'APK |
 | APK firmati | **Sì**, localmente con la chiave di release; certificato `CN=Scripta` |

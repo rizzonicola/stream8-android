@@ -87,7 +87,7 @@ jobs:
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
           echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
 
-      - name: Test unitari e compilazione release firmata (4 APK)
+      - name: Test unitari e compilazione release firmata
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -101,7 +101,7 @@ jobs:
         if: always()
         run: rm -f "$RUNNER_TEMP/release.keystore"
 
-      - name: Verifica contenuto e firma dei 4 APK
+      - name: Verifica contenuto e firma degli APK
         env:
           REQUIRE_SIGNED: '1'
           EXPECTED_VERSION: ${{ steps.version.outputs.version }}
@@ -110,7 +110,7 @@ jobs:
       - name: Calcola SHA-256
         working-directory: build/dist
         run: |
-          sha256sum Stream8-arm64-v8a.apk Stream8-armeabi-v7a.apk Stream8-x86_64.apk Stream8-universal.apk > SHA256SUMS.txt
+          sha256sum Stream8-*.apk > SHA256SUMS.txt
           sha256sum -c SHA256SUMS.txt
           cat SHA256SUMS.txt
 
@@ -133,8 +133,5 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
-            build/dist/Stream8-arm64-v8a.apk
-            build/dist/Stream8-armeabi-v7a.apk
-            build/dist/Stream8-x86_64.apk
-            build/dist/Stream8-universal.apk
+            build/dist/Stream8-*.apk
             build/dist/SHA256SUMS.txt

@@ -6,10 +6,12 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.http.SslError
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.Message
 import android.os.SystemClock
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -23,11 +25,12 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import androidx.annotation.RequiresApi
 import cc.poppi.stream8.BuildConfig
-import cc.poppi.stream8.NativeLocale
-import cc.poppi.stream8.Prefs
 import cc.poppi.stream8.adblock.AdBlocker
+import cc.poppi.stream8.navigation.AppLaunch
+import cc.poppi.stream8.navigation.ImportLink
 import cc.poppi.stream8.navigation.LoadErrorKind
 import cc.poppi.stream8.navigation.LoadErrors
 import cc.poppi.stream8.navigation.NavKind
@@ -38,7 +41,6 @@ import cc.poppi.stream8.navigation.Reason
 import cc.poppi.stream8.navigation.UrlParser
 import cc.poppi.stream8.navigation.Verdict
 import cc.poppi.stream8.navigation.WebAction
-import cc.poppi.stream8.navigation.hostMatches
 import java.io.ByteArrayInputStream
 
 /**
@@ -52,8 +54,8 @@ import java.io.ByteArrayInputStream
 class WebController(
     private val activity: Activity,
     private val policy: NavigationPolicy,
-    private val adBlocker: AdBlocker?,
-    private val prefs: Prefs,
+    private val adBlocker: AdBlocker,
+    private val isAdBlockEnabled: () -> Boolean,
     private val ui: Ui,
 ) {
     interface Ui {
@@ -62,8 +64,11 @@ class WebController(
         fun onLoadFinished()
         fun onLoadError(kind: LoadErrorKind)
         fun onBlocked(url: String, reason: Reason)
+        /** Chiede conferma prima di aprire un'app esterna. Il callback va invocato esattamente una volta. */
+        fun confirmExternalApp(url: String, onDecision: (Boolean) -> Unit)
         fun onThemeColor(color: Int)
-        fun onUiLanguage(language: String)
+        /** Valore grezzo letto dal sito; la risoluzione della lingua spetta all'interfaccia. */
+        fun onUiLanguage(language: String?)
         fun onMainFrameHost(host: String?)
         fun onRenderProcessGone()
         fun showCustomView(view: View, callback: WebChromeClient.CustomViewCallback)
@@ -71,25 +76,99 @@ class WebController(
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val themeSampler = object : Runnable {
+    private val pageSampler = object : Runnable {
         override fun run() {
             sampleThemeColor()
             sampleUiLanguage()
-            mainHandler.postDelayed(this, THEME_SAMPLE_MS)
+            mainHandler.postDelayed(this, PAGE_SAMPLE_MS)
         }
     }
     private val launcher = ExternalAppLauncher(activity)
     private var lastGoodUrl: String? = null
     private var lastRecoveryAt = 0L
-    private var lastUiLanguage: String? = null
-
-    lateinit var webView: WebView
-        private set
+    private lateinit var webView: WebView
+    private var container: FrameLayout? = null
 
     // ------------------------------------------------------------------ ciclo di vita
 
+    /** Crea la WebView e la inserisce dietro il resto del layout. */
+    fun attach(container: FrameLayout) {
+        this.container = container
+        val wv = createWebView()
+        container.addView(wv, 0, FrameLayout.LayoutParams(MATCH, MATCH))
+    }
+
+    /** Rimuove e distrugge la WebView corrente; [container] resta per un'eventuale ricreazione. */
+    fun detach() {
+        if (!::webView.isInitialized) return
+        stopPageSampling()
+        webView.stopLoading()
+        (webView.parent as? ViewGroup)?.removeView(webView)
+        webView.destroy()
+    }
+
+    /** Dopo un crash del renderer: nuova WebView e ritorno alla home. */
+    fun recover() {
+        val target = container ?: return
+        detach()
+        attach(target)
+        loadHome()
+    }
+
+    /** Tasto Indietro nella cronologia della WebView; false se non c'è una pagina precedente. */
+    fun handleBack(): Boolean {
+        if (!::webView.isInitialized || !webView.canGoBack()) return false
+        webView.goBack()
+        return true
+    }
+
+    fun onHostResume() {
+        if (!::webView.isInitialized) return
+        webView.onResume()
+        startPageSampling()
+    }
+
+    fun onHostPause() {
+        if (!::webView.isInitialized) return
+        stopPageSampling()
+        webView.onPause()
+        CookieManager.getInstance().flush() // la sessione sopravvive alla chiusura dell'app
+    }
+
+    /** Sposta la pagina sotto la fascia superiore quando è visibile. */
+    fun setContentTopInset(offset: Int) {
+        if (!::webView.isInitialized) return
+        val params = webView.layoutParams as FrameLayout.LayoutParams
+        if (params.topMargin == offset) return
+        params.topMargin = offset
+        webView.requestLayout()
+    }
+
+    /** Salva stato della WebView e della navigazione per la morte del processo. */
+    fun saveSession(outState: Bundle) {
+        outState.putStringArrayList(KEY_VISITED, policy.snapshot())
+        outState.putBoolean(KEY_CASCADE, policy.cascadeEnabled)
+        if (!::webView.isInitialized) return
+        if (webView.copyBackForwardList().size > MAX_SAVED_HISTORY) return
+        outState.putBundle(KEY_WEB, Bundle().also { webView.saveState(it) })
+    }
+
+    /**
+     * Ripristina policy, cronologia e pagina corrente nell'ordine corretto. False se non
+     * c'è una pagina ripristinabile o autorizzata: in quel caso il chiamante carica la home.
+     */
+    fun restoreSession(saved: Bundle?): Boolean {
+        policy.restore(
+            saved?.getStringArrayList(KEY_VISITED),
+            cascade = saved?.getBoolean(KEY_CASCADE, false) == true,
+        )
+        val webState = saved?.getBundle(KEY_WEB) ?: return false
+        if (!::webView.isInitialized || webView.restoreState(webState) == null) return false
+        return restorePageFromHistory()
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
-    fun createWebView(): WebView {
+    private fun createWebView(): WebView {
         val wv = WebView(activity)
         wv.setBackgroundColor(Color.BLACK)
         with(wv.settings) {
@@ -115,37 +194,49 @@ class WebController(
         wv.webViewClient = Client()
         wv.webChromeClient = Chrome()
         webView = wv
-        lastUiLanguage = null
+        lastGoodUrl = null
+        lastRecoveryAt = 0L
         return wv
     }
 
-    fun destroyWebView() {
-        stopThemeSampling()
-        webView.stopLoading()
-        (webView.parent as? ViewGroup)?.removeView(webView)
-        webView.destroy()
-    }
-
     fun loadHome() {
-        policy.onHomeRequested()
-        webView.loadUrl(PolicyDefaults.HOME_URL)
+        loadAsRoot(PolicyDefaults.HOME_URL)
     }
 
-    /** Link di importazione impostazioni: è sempre su Stream8, quindi riparte dalla home logica. */
-    fun loadImport(url: String) {
+    /** Valida e carica un link di importazione Stream8; false se il link non è valido. */
+    fun loadImport(url: String): Boolean {
+        val target = ImportLink.parse(url) ?: return false
+        loadAsRoot(target)
+        return true
+    }
+
+    private fun loadAsRoot(url: String) {
         policy.onHomeRequested()
+        lastGoodUrl = null
         webView.loadUrl(url)
     }
 
-    // Il tema del sito cambia senza navigazione: si legge il colore effettivo
-    // dalla pagina e lo si applica alle barre di sistema dal lato nativo.
-    fun startThemeSampling() {
-        mainHandler.removeCallbacks(themeSampler)
-        mainHandler.post(themeSampler)
+    /**
+     * Dopo restoreState la WebView non emette un nuovo commit: riallinea policy e
+     * interfaccia alla pagina ripristinata. False se la pagina non è autorizzata.
+     */
+    private fun restorePageFromHistory(): Boolean {
+        val url = webView.copyBackForwardList().currentItem?.url ?: webView.url ?: return false
+        if (url == "about:blank" || !policy.onMainFrameCommitted(url)) return false
+        lastGoodUrl = url
+        ui.onMainFrameHost(UrlParser.parse(url)?.host)
+        return true
     }
 
-    fun stopThemeSampling() {
-        mainHandler.removeCallbacks(themeSampler)
+    // Il tema e la lingua del sito cambiano senza navigazione: si leggono dalla pagina
+    // e si applicano dal lato nativo.
+    private fun startPageSampling() {
+        mainHandler.removeCallbacks(pageSampler)
+        mainHandler.post(pageSampler)
+    }
+
+    private fun stopPageSampling() {
+        mainHandler.removeCallbacks(pageSampler)
     }
 
     private fun sampleThemeColor() {
@@ -156,11 +247,22 @@ class WebController(
     }
 
     private fun parseThemeColor(value: String?): Int? {
-        // evaluateJavascript restituisce JSON: una stringa arriva tra virgolette.
-        val raw = value?.trim()?.removeSurrounding("\"") ?: return null
-        if (!raw.startsWith("#")) return null
-        return runCatching { Color.parseColor(raw) }.getOrNull()
+        val raw = jsonString(value)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        if (raw.startsWith("#")) return runCatching { Color.parseColor(raw) }.getOrNull()
+        val match = CSS_RGB.matchEntire(raw) ?: return null
+        val r = match.groupValues[1].toInt()
+        val g = match.groupValues[2].toInt()
+        val b = match.groupValues[3].toInt()
+        if (r > 255 || g > 255 || b > 255) return null
+        // Un body trasparente non è un colore di tema: meglio lasciare quello attuale.
+        val alpha = match.groupValues[4].toDoubleOrNull() ?: 1.0
+        if (alpha <= 0.0) return null
+        return Color.rgb(r, g, b)
     }
+
+    /** evaluateJavascript restituisce JSON: una stringa arriva tra virgolette. */
+    private fun jsonString(value: String?): String? =
+        value?.trim()?.removeSurrounding("\"")
 
     /**
      * Legge la lingua scelta nelle impostazioni del sito. Solo su Stream8: su un
@@ -169,15 +271,9 @@ class WebController(
     private fun sampleUiLanguage() {
         if (!::webView.isInitialized) return
         val host = policy.currentHost ?: return
-        if (!hostMatches(host, PolicyDefaults.STREAM8_HOST)) return
+        if (!PolicyDefaults.isStream8(host)) return
         webView.evaluateJavascript(LANGUAGE_SCRIPT) { value ->
-            // evaluateJavascript restituisce JSON: una stringa arriva tra virgolette.
-            val raw = value?.trim()?.removeSurrounding("\"") ?: return@evaluateJavascript
-            val language = NativeLocale.normalize(raw) ?: return@evaluateJavascript
-            if (language != lastUiLanguage) {
-                lastUiLanguage = language
-                ui.onUiLanguage(language)
-            }
+            ui.onUiLanguage(jsonString(value))
         }
     }
 
@@ -194,17 +290,32 @@ class WebController(
      */
     private fun handleNavigation(url: String, kind: NavKind, gesture: Boolean, redirect: Boolean): Boolean {
         val verdict = policy.evaluate(NavRequest(url, kind, gesture, redirect))
+        return when (verdict.appLaunch) {
+            AppLaunch.DIRECT -> launchOrApply(verdict, url, kind, gesture)
+            AppLaunch.CONFIRM -> {
+                ui.confirmExternalApp(url) { confirmed ->
+                    if (confirmed) launchOrApply(verdict, url, kind, gesture)
+                }
+                true
+            }
+            AppLaunch.NONE -> applyWebAction(verdict, url, forceLoad = kind == NavKind.POPUP)
+        }
+    }
 
-        if (verdict.mayLaunchApp) {
-            when (val result = launcher.launch(url)) {
-                ExternalAppLauncher.Result.Launched -> return true
-                is ExternalAppLauncher.Result.NoApp -> {
-                    // Nessuna app: per un intent:// si prova il fallback, valutato con le stesse regole.
-                    val fallback = result.fallbackUrl
-                    if (fallback != null) {
-                        val v = policy.evaluate(NavRequest(fallback, kind, gesture, false)).copy(mayLaunchApp = false)
-                        return applyWebAction(v, fallback, forceLoad = true)
-                    }
+    /**
+     * Prova ad aprire l'app. Se non esiste, per un intent:// si prova il fallback e in ogni
+     * caso si applica il verdetto web (caricamento o blocco).
+     */
+    private fun launchOrApply(verdict: Verdict, url: String, kind: NavKind, gesture: Boolean): Boolean {
+        when (val result = launcher.launch(url)) {
+            ExternalAppLauncher.Result.Launched -> return true
+            is ExternalAppLauncher.Result.NoApp -> {
+                // Nessuna app: per un intent:// si prova il fallback, valutato con le stesse regole.
+                val fallback = result.fallbackUrl
+                if (fallback != null) {
+                    val v = policy.evaluate(NavRequest(fallback, kind, gesture, false))
+                        .copy(appLaunch = AppLaunch.NONE)
+                    return applyWebAction(v, fallback, forceLoad = true)
                 }
             }
         }
@@ -227,6 +338,7 @@ class WebController(
     /** Ripristino dopo una pagina non autorizzata arrivata al frame principale (rete di sicurezza). */
     private fun recoverFromUnauthorizedPage(url: String) {
         val now = SystemClock.uptimeMillis()
+        // Evita un ciclo di ripristini se la pagina non autorizzata continua a ricaricarsi.
         if (now - lastRecoveryAt < 1000) return
         lastRecoveryAt = now
         policy.onNavigationFailed()
@@ -262,9 +374,8 @@ class WebController(
                 }
                 return null
             }
-            val blocker = adBlocker
             val host = url.host
-            if (blocker != null && host != null && prefs.adblockEnabled && blocker.shouldBlock(host, policy.currentHost)) {
+            if (host != null && isAdBlockEnabled() && adBlocker.shouldBlock(host, policy.currentHost)) {
                 return blockedResponse()
             }
             return null
@@ -284,7 +395,6 @@ class WebController(
             if (url == null) return
             if (policy.onMainFrameCommitted(url)) {
                 if (url != "about:blank") lastGoodUrl = url
-                // La fascia superiore a tema compare solo fuori da Stream8.
                 ui.onMainFrameHost(UrlParser.parse(url)?.host)
             } else {
                 recoverFromUnauthorizedPage(url)
@@ -378,10 +488,7 @@ class WebController(
         }
 
         override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
-            if (request != null && request.isForMainFrame) {
-                capture(request.url.toString())
-                return blockedResponse() // nessuna richiesta di rete dalla finestra temporanea
-            }
+            if (request != null && request.isForMainFrame) capture(request.url.toString())
             return blockedResponse()
         }
 
@@ -392,16 +499,27 @@ class WebController(
     }
 
     private fun destroyPopup(temp: WebView) {
-        runCatching {
+        try {
             temp.stopLoading()
             temp.webViewClient = WebViewClient()
             temp.destroy()
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "Pulizia della WebView temporanea non riuscita", e)
         }
     }
 
     private companion object {
+        const val TAG = "WebController"
         const val POPUP_TIMEOUT_MS = 15_000L
-        const val THEME_SAMPLE_MS = 1_000L
+        const val PAGE_SAMPLE_MS = 1_000L
+        const val MAX_SAVED_HISTORY = 15
+        const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
+        const val KEY_VISITED = "visited_scopes"
+        const val KEY_CASCADE = "cascade_enabled"
+        const val KEY_WEB = "web_state"
+
+        /** Colore calcolato dal browser per il body, es. `rgb(18, 18, 18)` o `rgba(0, 0, 0, 0.5)`. */
+        val CSS_RGB = Regex("""rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(0|1|0?\.\d+))?\s*\)""")
 
         /**
          * Legge il colore del tema che il sito pubblica in `meta[name=theme-color]`
@@ -411,9 +529,10 @@ class WebController(
         const val THEME_COLOR_SCRIPT = """(function(){var m=document.querySelector('meta[name="theme-color"]');if(m&&m.content)return m.content;var s=getComputedStyle(document.body);return s?s.backgroundColor:'';})()"""
 
         /**
-         * Legge `language` dalle impostazioni del sito e risolve `auto` come fa
-         * il sito (navigator.language, fallback inglese). Nessun bridge JS.
+         * Legge la lingua salvata dal sito, senza risolverla: `auto`, i valori non
+         * supportati e l'assenza dell'impostazione diventano null in [NativeLocale].
+         * Nessun bridge JS.
          */
-        const val LANGUAGE_SCRIPT = """(function(){try{var s=JSON.parse(localStorage.getItem('stream8_settings_v1')||'{}');var l=s.language||'auto';if(l==='auto'||!l){l=(navigator.language||'it').slice(0,2).toLowerCase();}return (l==='it'||l==='en'||l==='fr')?l:'en';}catch(e){return '';}})()"""
+        const val LANGUAGE_SCRIPT = """(function(){try{var s=JSON.parse(localStorage.getItem('stream8_settings_v1')||'{}');return s.language||'';}catch(e){return '';}})()"""
     }
 }

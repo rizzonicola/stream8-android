@@ -1,15 +1,16 @@
 package cc.poppi.stream8.navigation
 
 import java.net.URI
+import java.net.URISyntaxException
 
 /**
  * Accetta solo i link di condivisione impostazioni generati da Stream8
- * (`https://stream8.poppi.cc/import-settings?data=...`). Il payload viene validato
+ * (`https://<host Stream8>/import-settings?data=...`). Il payload viene validato
  * dal sito: qui serve solo a impedire che l'app carichi un URL arbitrario.
  */
 object ImportLink {
-    private const val PATH = "/import-settings"
-    private const val MAX_DATA_LENGTH = 20_000
+    /** Percorso usato anche nei testi nativi, così il link mostrato resta quello accettato. */
+    const val PATH = "/import-settings"
 
     fun parse(raw: String): String? {
         val value = raw.trim()
@@ -19,7 +20,7 @@ object ImportLink {
 
         val uri = try {
             URI(value)
-        } catch (e: Exception) {
+        } catch (e: URISyntaxException) {
             return null
         }
         if (uri.rawUserInfo != null || uri.path != PATH) return null
@@ -30,7 +31,7 @@ object ImportLink {
             .firstOrNull { it.substringBefore('=') == "data" }
             ?.substringAfter('=', "")
             .orEmpty()
-        if (data.isEmpty() || data.length > MAX_DATA_LENGTH) return null
+        if (data.isEmpty()) return null
         return value
     }
 }

@@ -8,7 +8,7 @@
     <string name="shortcut_settings_long">Impostazioni di Stream8</string>
 
     <string name="adblock_title">Blocco pubblicità e tracker</string>
-    <string name="adblock_desc">Filtro leggero basato su un elenco di domini (OISD Small), aggiornato automaticamente all\'avvio dell\'app (al massimo una volta ogni 7 giorni). Non blocca Stream8, TMDB, le richieste first-party né la navigazione principale. Non garantisce il blocco totale degli annunci. La modifica vale per le richieste successive: ricarica la pagina per applicarla del tutto.</string>
+    <string name="adblock_desc">Filtro leggero basato su un elenco di domini (OISD Small), aggiornato automaticamente all\'avvio dell\'app (al massimo una volta ogni %1$d giorni). Non blocca Stream8, TMDB, le richieste first-party né la navigazione principale. Non garantisce il blocco totale degli annunci. La modifica vale per le richieste successive: ricarica la pagina per applicarla del tutto.</string>
     <string name="action_reload_home">Ricarica Stream8</string>
     <string name="action_nav_rules">Regole di navigazione</string>
     <string name="version_label">Versione %1$s (build %2$d)</string>
@@ -20,19 +20,21 @@
     <string name="import_title">Importa impostazioni</string>
     <string name="import_message">Incolla il link di condivisione delle impostazioni di Stream8.</string>
     <string name="import_first_run_message">Se hai un link di condivisione delle impostazioni, incollalo qui. Altrimenti continua senza importare. Questo messaggio compare solo al primo avvio.</string>
-    <string name="import_hint">https://stream8.poppi.cc/import-settings?data=…</string>
+    <string name="import_hint">https://%1$s%2$s?data=…</string>
     <string name="import_action">Importa</string>
     <string name="continue_without_import">Continua senza importare</string>
-    <string name="import_invalid">Link non valido. Incolla un link https://stream8.poppi.cc/import-settings?data=…</string>
+    <string name="import_invalid">Link non valido. Incolla un link https://%1$s%2$s?data=…</string>
 
     <string name="info_title">Info e licenze</string>
-    <string name="info_body">Stream8 per Android è un contenitore WebView per Stream8 (stream8.poppi.cc): entrambi i progetti sono dello stesso autore. Non è affiliato a TMDB o ai servizi di streaming collegati.\n\nRICONOSCIMENTI\n• Stream8 — progetto web originale, rizzonicola/stream8 (GPL-3.0).\n• Kotlin, AndroidX Core e AndroidX Activity — Apache License 2.0.\n• Guava di Google — Apache License 2.0; include la Public Suffix List (MPL 2.0).\n• OISD Small — elenco di domini per il blocco di pubblicità e tracker, © Stephan van Ruth, GPL-3.0 (https://oisd.nl); l\'app lo scarica e lo aggiorna automaticamente.\n• Icona e banner — materiale grafico del progetto Stream8.\n• Dati su film, serie e anime — forniti da TMDB tramite Stream8. Questo prodotto usa l\'API TMDB ma non è approvato o certificato da TMDB.\n\nNOTE LEGALI\n• I marchi, i nomi e i contenuti appartengono ai rispettivi proprietari.\n• L\'utente è responsabile dell\'uso dei servizi di terze parti e del rispetto delle loro condizioni.\n• Nessuna telemetria, nessun annuncio, nessun accesso a file locali, fotocamera, microfono o posizione. Cookie e dati di navigazione restano sul dispositivo.\n• Licenza dell\'app: GNU General Public License v3.0 (GPL-3.0), © 2026 Nicola Rizzo. Il progetto web Stream8 è distribuito con la stessa licenza.</string>
+    <string name="info_body">Stream8 per Android è un contenitore WebView per Stream8 (%1$s): entrambi i progetti sono dello stesso autore. Non è affiliato a TMDB o ai servizi di streaming collegati.\n\nRICONOSCIMENTI\n• Stream8 — progetto web originale, rizzonicola/stream8 (GPL-3.0).\n• Kotlin, AndroidX Core e AndroidX Activity — Apache License 2.0.\n• Guava di Google — Apache License 2.0; include la Public Suffix List (MPL 2.0).\n• OISD Small — elenco di domini per il blocco di pubblicità e tracker, © Stephan van Ruth, GPL-3.0 (https://oisd.nl); l\'app lo scarica e lo aggiorna automaticamente.\n• Icona e banner — materiale grafico del progetto Stream8.\n• Dati su film, serie e anime — forniti da TMDB tramite Stream8. Questo prodotto usa l\'API TMDB ma non è approvato o certificato da TMDB.\n\nNOTE LEGALI\n• I marchi, i nomi e i contenuti appartengono ai rispettivi proprietari.\n• L\'utente è responsabile dell\'uso dei servizi di terze parti e del rispetto delle loro condizioni.\n• Nessuna telemetria, nessun annuncio, nessun accesso a file locali, fotocamera, microfono o posizione. Cookie e dati di navigazione restano sul dispositivo.\n• Licenza dell\'app: GNU General Public License v3.0 (GPL-3.0), © 2026 Nicola Rizzo. Il progetto web Stream8 è distribuito con la stessa licenza.</string>
 
     <string name="nav_rules_title">Regole di navigazione</string>
-    <string name="nav_rules_body">• Si parte da Stream8 (stream8.poppi.cc).\n\n• Quando da Stream8 tocchi un servizio, la pagina si apre qui dentro e il dominio autorizzato diventa quello del servizio, con tutti i suoi sottodomini.\n\n• Senza TMDB nella catena il servizio non può aprire altri domini né Stream8: per tornare indietro usa il tasto Indietro.\n\n• TMDB (themoviedb.org) è sempre raggiungibile. Quando la catena passa da TMDB, i servizi possono aprire nuovi domini con un tocco reale o tramite i redirect del server (es. TMDB → JustWatch → Prime Video).\n\n• Da Stream8, da TMDB e dai servizi della cascata TMDB, con un tocco reale, un link può aprire l\'app Android compatibile (es. un\'app di streaming installata). Un servizio aperto direttamente da Stream8, senza TMDB, non può avviare app; redirect e navigazioni automatiche non aprono mai app.\n\n• Solo HTTPS. Certificati non validi non vengono mai accettati. Nessun browser esterno viene aperto.</string>
+    <string name="nav_rules_body">• Si parte da Stream8 (%1$s).\n\n• Quando da Stream8 tocchi un servizio, la pagina si apre qui dentro e il dominio autorizzato diventa quello del servizio, con tutti i suoi sottodomini.\n\n• Senza TMDB nella catena il servizio non può aprire altri domini né Stream8: per tornare indietro usa il tasto Indietro.\n\n• TMDB (%2$s) è sempre raggiungibile. Quando la catena passa da TMDB, i servizi possono aprire nuovi domini con un tocco reale o tramite i redirect del server (es. TMDB → JustWatch → Prime Video).\n\n• Da Stream8, da TMDB e dai servizi della cascata TMDB, con un tocco reale, un link può aprire l\'app Android compatibile (es. un\'app di streaming installata). Fuori dalla cascata TMDB, un servizio aperto direttamente da Stream8 può aprire un\'app solo dopo una conferma esplicita; redirect e navigazioni automatiche non aprono mai app.\n\n• Solo HTTPS. Certificati non validi non vengono mai accettati. Nessun browser esterno viene aperto.</string>
 
     <string name="retry">Riprova</string>
     <string name="open_settings">Impostazioni</string>
+    <string name="action_ok">OK</string>
+    <string name="action_cancel">Annulla</string>
     <string name="error_offline">Connessione assente o server non raggiungibile.</string>
     <string name="error_timeout">Il server non risponde. Riprova tra poco.</string>
     <string name="error_tls">Connessione non sicura: certificato non valido. La pagina non è stata caricata.</string>
@@ -41,4 +43,8 @@
     <string name="blocked_navigation">Navigazione bloccata: %1$s</string>
     <string name="blocked_app">Questa pagina non può aprire altre app</string>
     <string name="no_app">Nessuna app compatibile trovata</string>
+
+    <string name="confirm_app_title">Aprire un\'altra app?</string>
+    <string name="confirm_app_message">Questa pagina vuole aprire un\'altra app.\n\nDestinazione: %1$s\n\nContinuare?</string>
+    <string name="confirm_app_open">Apri</string>
 </resources>

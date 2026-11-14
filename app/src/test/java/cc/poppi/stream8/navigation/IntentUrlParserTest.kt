@@ -56,6 +56,9 @@ class IntentUrlParserTest {
             "intent://x#Intent;scheme=file;end",
             "intent://x#Intent;scheme=http;end",
             "intent://x#Intent;scheme=intent;end",
+            "intent://x#Intent;scheme=ws;end",
+            "intent://x#Intent;scheme=googlechrome;end", // mai un browser, nemmeno dentro intent://
+            "intent://x#Intent;scheme=firefox;end",
             "intent://x#Intent;scheme=https;package=com.android.chrome;end", // mai un browser
             "intent://x#Intent;scheme=https;package=org.mozilla.firefox;end",
             "intent://x#Intent;scheme=https;package=not a package;end",
