@@ -16,7 +16,7 @@ ricostruisce il sito in Kotlin, carica `https://stream8.poppi.cc/`.
 - L'interfaccia nativa (menu, Impostazioni, Info e licenze, messaggi) segue la lingua scelta su Stream8: italiano, inglese, francese o automatica.
 - La fascia superiore a tema compare **solo fuori da Stream8** (TMDB, servizi esterni): lì occupa l'area dell'intaglio e la pagina inizia **sotto** di essa, senza sovrapposizioni. Sulla home e sulle pagine Stream8 la fascia è nascosta e la pagina arriva fino in alto.
 - Mantiene cookie, Local Storage e sessioni; barra di caricamento discreta; errore di connessione con pulsante **Riprova**.
-- Usa la cache del service worker del sito: la shell si apre subito dalla cache e si aggiorna in background; i dati dinamici restano sempre in rete.
+- Usa la cache del service worker del sito; se una shell vecchia lascia la pagina vuota, l'app ripulisce la cache e ricarica da sola; i dati dinamici restano sempre in rete.
 - Quando da Stream8 si apre un servizio esterno, **solo quel dominio** (con i suoi sottodomini) diventa navigabile; TMDB resta sempre raggiungibile. Quando entra in gioco TMDB la navigazione procede **a cascata** su nuovi domini, ricorsivamente. Dettagli in [docs/NAVIGAZIONE.md](docs/NAVIGAZIONE.md).
 - Può aprire app Android installate (es. un'app di streaming) **solo** con un tocco reale dell'utente: da pagine Stream8, TMDB e servizi della cascata TMDB direttamente; da un servizio fuori dalla cascata solo dopo una conferma esplicita.
 - Solo HTTPS, certificati sempre verificati, nessun bridge JavaScript, nessun accesso a file locali, nessun browser esterno.

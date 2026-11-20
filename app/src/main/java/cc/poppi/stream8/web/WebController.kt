@@ -89,6 +89,12 @@ class WebController(
     private lateinit var webView: WebView
     private var container: FrameLayout? = null
 
+    /** Controllo automatico della pagina nera: un solo tentativo per caricamento. */
+    private var pendingBlankCheck: Runnable? = null
+    private var recoveryFallback: Runnable? = null
+    private var pageGeneration = 0
+    private var pageFailed = false
+
     // ------------------------------------------------------------------ ciclo di vita
 
     /** Crea la WebView e la inserisce dietro il resto del layout. */
@@ -102,6 +108,8 @@ class WebController(
     fun detach() {
         if (!::webView.isInitialized) return
         stopPageSampling()
+        cancelBlankCheck()
+        cancelRecoveryFallback()
         webView.stopLoading()
         (webView.parent as? ViewGroup)?.removeView(webView)
         webView.destroy()
@@ -126,6 +134,7 @@ class WebController(
         if (!::webView.isInitialized) return
         webView.onResume()
         startPageSampling()
+        scheduleBlankCheck()
     }
 
     fun onHostPause() {
@@ -196,6 +205,10 @@ class WebController(
         webView = wv
         lastGoodUrl = null
         lastRecoveryAt = 0L
+        pageGeneration = 0
+        pageFailed = false
+        cancelBlankCheck()
+        cancelRecoveryFallback()
         return wv
     }
 
@@ -278,8 +291,73 @@ class WebController(
     }
 
     fun retry() {
+        pageFailed = false
         val current = webView.url
         if (current.isNullOrBlank() || current == "about:blank") loadHome() else webView.reload()
+    }
+
+    // ------------------------------------------------------ correzioni lato app
+
+    private fun isStream8Url(url: String?): Boolean =
+        url != null && UrlParser.parse(url)?.host?.let { PolicyDefaults.isStream8(it) } == true
+
+    private fun cancelBlankCheck() {
+        pendingBlankCheck?.let { mainHandler.removeCallbacks(it) }
+        pendingBlankCheck = null
+    }
+
+    private fun cancelRecoveryFallback() {
+        recoveryFallback?.let { mainHandler.removeCallbacks(it) }
+        recoveryFallback = null
+    }
+
+    /**
+     * Dopo il caricamento verifica che React abbia disegnato qualcosa. Se la
+     * shell servita dal service worker punta a chunk JS spariti, la pagina
+     * resta nera: qui la cache viene ripulita e la pagina ricaricata una volta.
+     * Il controllo è solo su Stream8 e non tocca i siti esterni.
+     */
+    private fun scheduleBlankCheck() {
+        cancelBlankCheck()
+        if (!::webView.isInitialized || pageFailed) return
+        if (!isStream8Url(webView.url)) return
+        val check = Runnable {
+            pendingBlankCheck = null
+            if (!::webView.isInitialized || webView.isLoading || pageFailed) return@Runnable
+            if (!isStream8Url(webView.url)) return@Runnable
+            webView.evaluateJavascript(BLANK_PAGE_SCRIPT) { value ->
+                if (jsonString(value) == "blank" || jsonString(value) == "missing") recoverBlankPage()
+            }
+        }
+        pendingBlankCheck = check
+        mainHandler.postDelayed(check, BLANK_CHECK_DELAY_MS)
+    }
+
+    private fun recoverBlankPage() {
+        if (!::webView.isInitialized) return
+        // Un solo tentativo automatico: se anche il reload fallisce, si mostra
+        // l'errore nativo con "Riprova" invece di ricaricare all'infinito.
+        pageFailed = true
+        // Cache HTTP (l'HTML di fallback può essere stato salvato sotto un URL .js).
+        webView.clearCache(true)
+        val generation = pageGeneration
+        webView.evaluateJavascript(RECOVER_SCRIPT) { value ->
+            when (jsonString(value)) {
+                "started" -> scheduleRecoveryFallback(generation)
+                else -> ui.onLoadError(LoadErrorKind.OTHER)
+            }
+        }
+    }
+
+    /** Se lo script non riesce ad avviare il reload, l'errore nativo resta visibile. */
+    private fun scheduleRecoveryFallback(generation: Int) {
+        cancelRecoveryFallback()
+        val fallback = Runnable {
+            recoveryFallback = null
+            if (pageGeneration == generation) ui.onLoadError(LoadErrorKind.OTHER)
+        }
+        recoveryFallback = fallback
+        mainHandler.postDelayed(fallback, RECOVERY_FALLBACK_MS)
     }
 
     // ------------------------------------------------------------------ decisione
@@ -381,7 +459,19 @@ class WebController(
             return null
         }
 
+        override fun onPageCommitVisible(view: WebView?, url: String?) {
+            // Il link "Salta al contenuto" del sito è già nel DOM: correggiamo
+            // il CSS prima del primo disegno, così non resta una striscia in alto.
+            if (view != null && isStream8Url(url ?: view.url)) {
+                view.evaluateJavascript(CLIENT_FIXES_SCRIPT, null)
+            }
+        }
+
         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+            pageGeneration++
+            pageFailed = false
+            cancelBlankCheck()
+            cancelRecoveryFallback()
             ui.onLoadStarted()
         }
 
@@ -389,6 +479,11 @@ class WebController(
             ui.onLoadFinished()
             sampleThemeColor()
             sampleUiLanguage()
+            if (isStream8Url(url ?: view?.url)) {
+                // Seconda iniezione: copre i casi in cui il commit non è passato.
+                view?.evaluateJavascript(CLIENT_FIXES_SCRIPT, null)
+                scheduleBlankCheck()
+            }
         }
 
         override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
@@ -404,6 +499,8 @@ class WebController(
         override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
             if (request == null || error == null || !request.isForMainFrame) return
             policy.onNavigationFailed()
+            pageFailed = true
+            cancelBlankCheck()
             ui.onLoadError(LoadErrors.classify(error.errorCode))
         }
 
@@ -534,5 +631,79 @@ class WebController(
          * Nessun bridge JS.
          */
         const val LANGUAGE_SCRIPT = """(function(){try{var s=JSON.parse(localStorage.getItem('stream8_settings_v1')||'{}');return s.language||'';}catch(e){return '';}})()"""
+
+        const val BLANK_CHECK_DELAY_MS = 3_000L
+        const val RECOVERY_FALLBACK_MS = 6_000L
+
+        /**
+         * Nasconde il link "Salta al contenuto" del sito con la tecnica
+         * "visually hidden": nella WebView il vecchio `translateY(-160%)`
+         * lasciava una striscia visibile in alto. Resta raggiungibile con Tab.
+         * shortcut: si può togliere quando il sito pubblica il proprio fix CSS.
+         */
+        val CLIENT_FIXES_SCRIPT = """
+            (function(){
+              if (document.getElementById('stream8-app-fixes')) return;
+              var style = document.createElement('style');
+              style.id = 'stream8-app-fixes';
+              style.textContent = 'a[href="#main"]{position:fixed!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;clip-path:inset(50%)!important;white-space:nowrap!important;transform:none!important}a[href="#main"]:focus-visible{width:auto!important;height:auto!important;overflow:visible!important;clip:auto!important;clip-path:none!important}';
+              (document.head || document.documentElement).appendChild(style);
+            })()
+        """.trimIndent()
+
+        /**
+         * `blank` = React non ha disegnato nulla (il link "Salta al contenuto"
+         * da solo non conta). `missing` = manca addirittura #root.
+         */
+        val BLANK_PAGE_SCRIPT = """
+            (function(){
+              var root = document.getElementById('root');
+              if (!root) return 'missing';
+              var skip = root.querySelector('a[href="#main"]');
+              var text = (root.innerText || '').trim();
+              if (skip) {
+                var skipText = (skip.innerText || '').trim();
+                if (skipText) text = text.replace(skipText, '').trim();
+              }
+              if (text) return 'ok';
+              if (root.querySelector('main,header,nav,img,svg,video,canvas,input,button,select,textarea,[role],[aria-label]')) return 'ok';
+              return 'blank';
+            })()
+        """.trimIndent()
+
+        /**
+         * Svuota la Cache Storage del sito e disregistra il service worker,
+         * poi ricarica. La navigazione ricade così sulla rete invece che sulla
+         * vecchia shell. Il timestamp evita più reload automatici ravvicinati.
+         * Ritorna subito 'started' (il reload è asincrono), 'skip' se il
+         * tentativo è troppo recente o 'error' se il browser non collabora.
+         */
+        val RECOVER_SCRIPT = """
+            (function(){
+              try {
+                var key = 'stream8_app_recovery_at';
+                var last = Number(sessionStorage.getItem(key) || 0);
+                if (Date.now() - last < 60000) return 'skip';
+                sessionStorage.setItem(key, String(Date.now()));
+                function done(){ try { location.reload(); } catch (e) {} }
+                try {
+                  if (window.caches && caches.keys) {
+                    caches.keys().then(function(keys){
+                      return Promise.all(keys.map(function(k){ return caches.delete(k); }));
+                    }).catch(function(){}).then(function(){
+                      if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+                        return navigator.serviceWorker.getRegistrations().then(function(regs){
+                          return Promise.all(regs.map(function(r){ return r.unregister(); }));
+                        }).catch(function(){});
+                      }
+                    }).then(done);
+                  } else {
+                    done();
+                  }
+                } catch (e) { done(); }
+                return 'started';
+              } catch (e) { return 'error'; }
+            })()
+        """.trimIndent()
     }
 }
