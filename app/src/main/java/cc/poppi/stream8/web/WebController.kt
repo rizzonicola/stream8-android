@@ -93,6 +93,7 @@ class WebController(
     private var pendingBlankCheck: Runnable? = null
     private var recoveryFallback: Runnable? = null
     private var pageGeneration = 0
+    private var pageLoading = false
     private var pageFailed = false
 
     // ------------------------------------------------------------------ ciclo di vita
@@ -206,6 +207,7 @@ class WebController(
         lastGoodUrl = null
         lastRecoveryAt = 0L
         pageGeneration = 0
+        pageLoading = false
         pageFailed = false
         cancelBlankCheck()
         cancelRecoveryFallback()
@@ -293,6 +295,10 @@ class WebController(
     fun retry() {
         pageFailed = false
         val current = webView.url
+        // Il retry è manuale: può ignorare il cooldown contro i reload automatici.
+        if (isStream8Url(current)) {
+            webView.evaluateJavascript("try{sessionStorage.removeItem('stream8_app_recovery_at')}catch(e){}", null)
+        }
         if (current.isNullOrBlank() || current == "about:blank") loadHome() else webView.reload()
     }
 
@@ -319,11 +325,11 @@ class WebController(
      */
     private fun scheduleBlankCheck() {
         cancelBlankCheck()
-        if (!::webView.isInitialized || pageFailed) return
+        if (!::webView.isInitialized || pageLoading || pageFailed) return
         if (!isStream8Url(webView.url)) return
         val check = Runnable {
             pendingBlankCheck = null
-            if (!::webView.isInitialized || webView.isLoading || pageFailed) return@Runnable
+            if (!::webView.isInitialized || pageLoading || pageFailed) return@Runnable
             if (!isStream8Url(webView.url)) return@Runnable
             webView.evaluateJavascript(BLANK_PAGE_SCRIPT) { value ->
                 if (jsonString(value) == "blank" || jsonString(value) == "missing") recoverBlankPage()
@@ -469,6 +475,7 @@ class WebController(
 
         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
             pageGeneration++
+            pageLoading = true
             pageFailed = false
             cancelBlankCheck()
             cancelRecoveryFallback()
@@ -476,6 +483,7 @@ class WebController(
         }
 
         override fun onPageFinished(view: WebView?, url: String?) {
+            pageLoading = false
             ui.onLoadFinished()
             sampleThemeColor()
             sampleUiLanguage()
@@ -499,6 +507,7 @@ class WebController(
         override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
             if (request == null || error == null || !request.isForMainFrame) return
             policy.onNavigationFailed()
+            pageLoading = false
             pageFailed = true
             cancelBlankCheck()
             ui.onLoadError(LoadErrors.classify(error.errorCode))
