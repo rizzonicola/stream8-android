@@ -206,7 +206,7 @@ distribuito con la stessa licenza e fonte dell'icona e del banner dell'app.
 |---|---|
 | Compilazione Gradle/Kotlin/APK | **Eseguita** localmente (Gradle 8.9, JDK 17, Android SDK 35): debug e release R8 OK; lint verde con 13 warning preesistenti. La release firmata è prodotta dal workflow |
 | Test unitari (74 casi) | **Eseguiti** localmente: tutti PASS |
-| Workflow GitHub Actions | Sintassi YAML valida; esecuzione end-to-end con le release `v0.0.3`, `v0.0.4`, `v0.0.5`, `v0.0.6`, `v0.0.7` e `v0.0.8` |
+| Workflow GitHub Actions | Sintassi YAML valida; esecuzione end-to-end con le release `v0.0.3`, `v0.0.4`, `v0.0.5`, `v0.0.6`, `v0.0.7`, `v0.0.8` e `v0.0.9` |
 | Conferma apertura app fuori cascata | **Verificata** su Waydroid con l'APK debug: dialogo per link HTTPS cross-domain e deep link, annullamento senza navigazione, apertura solo dopo conferma, nessun dialogo per i link dello stesso servizio |
 | Aggiornamento adblock (OISD) | **Verificato** su Waydroid con l'APK `0.0.5`: 62.336 domini scaricati e applicati; Stream8 carica regolarmente |
 | Fascia superiore e navbar | **Verificata** su Waydroid con inset superiore forzato a 60 px: su TMDB la fascia occupa `0..60` e la WebView inizia a `y=60`, senza coprire il contenuto; su Stream8 la fascia è `GONE` e la WebView parte da `0`. L'emulatore non espone un inset reale maggiore di zero, quindi il test usa un inset temporaneo |
