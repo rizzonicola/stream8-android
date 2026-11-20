@@ -7,7 +7,7 @@ Questo repository è **separato** da [`rizzonicola/stream8`](https://github.com/
 ricostruisce il sito in Kotlin, carica `https://stream8.poppi.cc/`.
 
 > **Stato della verifica:** test unitari, lint e build debug/release (R8) eseguiti localmente il 14/11/2026 con JDK 17
-> e Android SDK 35: tutti verdi; la release firmata è prodotta e verificata dal workflow. La release GitHub `v0.0.8` è
+> e Android SDK 35: tutti verdi; la release firmata è prodotta e verificata dal workflow. La release GitHub `v0.0.9` è
 > l'ultima verifica end-to-end dei workflow: vedi [Stato della verifica](#stato-della-verifica).
 
 ## Cosa fa
